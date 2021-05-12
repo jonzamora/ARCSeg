@@ -1,2 +1,2 @@
-datasets/miccaiSegOrgans/
-datasets/miccaiSegRefined/
+src/datasets/miccaiSegOrgans/
+src/datasets/miccaiSegRefined/
