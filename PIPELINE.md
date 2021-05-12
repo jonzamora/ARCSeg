@@ -42,14 +42,11 @@
 
 ### [Proposed Model] - Semi-Supervised Semantic Segmentation for m2caiseg
 1. ARCNet will aim to utilize a Semi-Supervised approach for improving the task of Semantic Segmantion for live surgical video datasets.
-    * The following paper provides a framework for semi-supervised semantic segmentation that is enhanced by self-supervised monocular depth estimation from unlabeled image sequences. They transfer knowledge from features learned during self-supervised depth estimation to semantic segmentation.
-    * Paper: [Link](https://arxiv.org/abs/2012.10782)
+    * The ["Three Ways to Improve Semantic Segmentation with Self-Supervised Depth Estimation"](https://arxiv.org/abs/2012.10782) paper provides a successful framework for semi-supervised semantic segmentation that is enhanced by self-supervised monocular depth estimation from unlabeled image sequences. They transfer knowledge from features learned during self-supervised depth estimation to semantic segmentation.
     * Github Repo: [Link](https://github.com/lhoyer/improving_segmentation_with_selfsupervised_depth)
     * For pre-training, we will train a self-supervised depth estimation model on `m2cai16-tool` image sequences and transfer the pre-trained weights to our semantic segmentation model.
 2. Create Image Sequences for Unlabeled Monocular Depth Estimation Model Training
-    * The data preparation scripts for the image sequences can be found in the following paper's `data/` directory
-    * Paper: [Link](https://people.eecs.berkeley.edu/~tinghuiz/projects/SfMLearner/)
-    * Github Repo: [Link](https://github.com/tinghuiz/SfMLearner)
+    * The data preparation scripts for the image sequences can be found in the [SfMLearner](https://people.eecs.berkeley.edu/~tinghuiz/projects/SfMLearner/) paper's `data/` directory in the following [Github Repo](https://github.com/tinghuiz/SfMLearner)
     * The image sequences will consist of 3-tuples in the format of `(prior frame, current frame, next frame)` since that is what the paper uses in their method.
-3. To improve on the paper from [1](https://arxiv.org/abs/2012.10782), we will utilize a better self-supervised depth estimation model that was developed by Niantic Labs. The paper originally used the [Monodepth2](https://github.com/nianticlabs/monodepth2) model, but we will use the new-and-improved [manydepth](https://github.com/nianticlabs/manydepth) model for our work.
+3. To improve on the paper from [1](https://arxiv.org/abs/2012.10782), we will utilize a better self-supervised depth estimation model that was developed by Niantic Labs. The paper originally used the [Monodepth2](https://github.com/nianticlabs/monodepth2) model, but we will use the new-and-improved [manydepth](https://github.com/nianticlabs/manydepth) model (also developed by Niantic Labs) for our work.
     * We use this depth estimation model since it provides overall improvements for depth estimation and will ideally transfer these improvements to our semantic segmentation model.
