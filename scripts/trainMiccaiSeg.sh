@@ -1,1 +1,1 @@
-python mainMiccaiSeg.py --save-dir=save_MiccaiSeg --batchSize 2 --lr 0.0001 --epochs 90 --saveTest True |& tee -a log_MiccaiSeg
+python ../src/mainMiccaiSeg.py --save-dir=save_MiccaiSeg --batchSize 2 --lr 0.0001 --epochs 90 --saveTest True |& tee -a log_MiccaiSeg

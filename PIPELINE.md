@@ -4,12 +4,12 @@
 
 ### [Baseline Model] - Unsupervised Semantic Segmentation for m2caiseg
 
-1. **Unsupervised Pre-Training to Learn Dataset Specific Features `trainMiccaiRecon.sh`**
+1. **Unsupervised Pre-Training to Learn Dataset Specific Features [`trainMiccaiRecon.sh`](scripts/trainMiccaiRecon.sh)**
     - Train over the entire `m2cai16-tool` training set (581,935 Frames) for Image Reconstruction over 1 epoch
         - Acquired `m2cai16-tool` training data via this form [[Link](https://docs.google.com/forms/d/1RIHj5aenrA37fVWHi3SHmDeIp9Iaz8W302P8dbwI3Po/viewform?edit_requested=true)] and from this Lab [[Link](http://camma.u-strasbg.fr/datasets)]
-        - Used `vid2jpg.py` to convert 1 video frame to jpg. Since all videos from `m2cai16-tool` were shot in 25 fps, the script was designed to generate 25 images for every 1 second of the input video. As a result, we get **581,935 jpg images for Training** and **313,455 jpg images for Testing**
-        - To train the Image Reconstruction model, I ran [`trainMiccaiRecon.sh`](trainMiccaiRecon.sh) inside of my conda environment using `./trainMiccaiRecon.sh` (See details on Conda Environment Below)
-    - **Environment Specifics**
+        - Used [`vid2jpg.py`](src/vid2jpg.py) to convert 1 video frame to jpg. Since all videos from `m2cai16-tool` were shot in 25 fps, the script was designed to generate 25 images for every 1 second of the input video. As a result, we get **581,935 jpg images for Training** and **313,455 jpg images for Testing**
+        - To train the Image Reconstruction model, I ran [`trainMiccaiRecon.sh`](scripts/trainMiccaiRecon.sh) inside of my conda environment using `./trainMiccaiRecon.sh` (See details on Conda Environment Below)
+    - **Conda Environment Configuration**
         - `conda activate pytorch` - Using conda environment to containerize PyTorch and CUDA dependencies for ReconNet + SegNet
         - Directions:
             ```
@@ -23,20 +23,20 @@
             ```
         - Note: All tests were run on `Ubuntu 21.04` with NVIDIA GeForce RTX 3080 Mobile / Max-Q 16GB VRAM GPU and `CUDA Version: 11.3` [Checked via `nvidia-smi`]
     - **Training Results**
-        - [log_MiccaiRecon](log_MiccaiRecon)
-2. **Initialize Segmentation Network with Weights from the Reconstruction Network `trainMiccaiSeg.sh`**
+        - [log_MiccaiRecon](logs/log_MiccaiRecon)
+2. **Initialize Segmentation Network with Weights from the Reconstruction Network [`trainMiccaiSeg.sh`](scripts/trainMiccaiSeg.sh)**
     - **Data**
         - The data can be found at the following Kaggle Link -> [Link](https://www.kaggle.com/salmanmaq/m2caiseg)
     - To train the Segmentation Network without initializing its weights from the Pre-trained Image ReconNet, we run `./trainMiccaiSeg.sh`
     - The SegNet uses `batch size = 2` and is trained over 90 Epochs
     - **Training Results**
         - [log_MiccaiSeg](log_MiccaiSeg)
-3. **Finetune the Segmentation Network `finetuneMiccaiSeg.sh`**
+3. **Finetune the Segmentation Network [`finetuneMiccaiSeg.sh`](scripts/finetuneMiccaiSeg.sh)**
     - Batch Size = 2
     - 90 Epochs
-4. **Run Segmentation + Classifier Network `trainMiccaiSegPlusClass.sh`**
+4. **Run Segmentation + Classifier Network [`trainMiccaiSegPlusClass.sh`](scripts/trainMiccaiSegPlusClass.sh)**
 
-* TODO: Evaluate Segmentation Predictions via `evaluate.sh`
+5. **Evaluate Segmentation Predictions via [`evaluate.sh`](scripts/evaluate.sh)**
 
 ---
 
