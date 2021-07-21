@@ -1,0 +1,82 @@
+{
+    "classes": [
+      {
+        "id": "0",
+        "name": "Black Background",
+        "color": "[127,127,127]",
+        "super-category": "misc"
+      },
+      {
+        "id": "1",
+        "name": "Abdominal Wall",
+        "color": "[210,140,140]",
+        "super-category": "organ"
+      },
+      {
+        "id": "2",
+        "name": "Liver",
+        "color": "[255,114,114]",
+        "super-category": "organ"
+      },
+      {
+        "id": "3",
+        "name": "Gastrointestinal Tract",
+        "color": "[231,70,156]",
+        "super-category": "organ"
+      },
+      {
+        "id": "4",
+        "name": "Fat",
+        "color": "[186,183,75]",
+        "super-category": "organ"
+      },
+      {
+        "id": "5",
+        "name": "Grasper",
+        "color": "[170,255,0]",
+        "super-category": "instrument"
+      },
+      {
+        "id": "6",
+        "name": "Connective Tissue",
+        "color": "[255,85,0]",
+        "super-category": "organ"
+      },
+      {
+        "id": "7",
+        "name": "Blood",
+        "color": "[255,0,0]",
+        "super-category": "fluid"
+      },
+      {
+        "id": "8",
+        "name": "Cystic Duct",
+        "color": "[255,255,0]",
+        "super-category": "organ"
+      },
+      {
+        "id": "9",
+        "name": "L-hook Electrocautery",
+        "color": "[169,255,184]",
+        "super-category": "instrument"
+      },
+      {
+        "id": "10",
+        "name": "Gallblader",
+        "color": "[255,160,165]",
+        "super-category": "organ"
+      },
+      {
+        "id": "11",
+        "name": "Hepatic Vein",
+        "color": "[0,50,128]",
+        "super-category": "vein"
+      },
+      {
+        "id": "12",
+        "name": "Liver Ligament",
+        "color": "[111,74,0]",
+        "super-category": "organ"
+      }
+    ]
+  }

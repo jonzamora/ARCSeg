@@ -1,2 +1,12 @@
 src/datasets/miccaiSegOrgans/
 src/datasets/miccaiSegRefined/
+src/datasets/cholec/
+.vscode/
+table1.png
+table2.png
+table3.png
+torch.yml
+notebooks/utils.py
+notebooks/.ipynb_checkpoints
+scripts/save_cholecSeg
+scripts/iou.html

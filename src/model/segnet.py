@@ -48,7 +48,7 @@ class decoder(nn.Module):
         Decoder for the Segmentation Network
     '''
 
-    def __init__(self, batchNorm_momentum, num_classes=19):
+    def __init__(self, batchNorm_momentum, num_classes=13):
         super(decoder, self).__init__()
         self.main = nn.Sequential(
             nn.ConvTranspose2d(1024, 512, 4, 1, 0, bias=False),
@@ -93,6 +93,8 @@ class SegNet(nn.Module):
         print('Latent Shape')
         print(latent.shape)
         output = self.decoder(latent)
+        print('Output Shape')
+        print(output.shape)
 
         return output
 
@@ -106,6 +108,7 @@ class SegNet(nn.Module):
         eps = 0.0001
 
         encoded_target = output.detach() * 0
+        print("encoded target:", encoded_target.shape)
         if ignore_index is not None:
             mask = target == ignore_index
             target = target.clone()

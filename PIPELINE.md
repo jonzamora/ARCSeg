@@ -1,4 +1,4 @@
-## ARCNet Model Pipeline
+## ARCSeg Model Pipeline
 
 ---
 
@@ -10,17 +10,18 @@
         - Used [`vid2jpg.py`](src/vid2jpg.py) to convert 1 video frame to jpg. Since all videos from `m2cai16-tool` were shot in 25 fps, the script was designed to generate 25 images for every 1 second of the input video. As a result, we get **581,935 jpg images for Training** and **313,455 jpg images for Testing**
         - To train the Image Reconstruction model, I ran [`trainMiccaiRecon.sh`](scripts/trainMiccaiRecon.sh) inside of my conda environment using `./trainMiccaiRecon.sh` (See details on Conda Environment Below)
     - **Conda Environment Configuration**
-        - `conda activate pytorch` - Using conda environment to containerize PyTorch and CUDA dependencies for ReconNet + SegNet
+        - `conda activate torch` - Using conda environment to containerize PyTorch and CUDA dependencies for ReconNet + SegNet
         - Directions:
             ```
-            conda create --name pytorch python=3.7
-            conda activate pytorch
+            conda create --name torch python=3.7
+            conda activate torch
             conda install pytorch torchvision torchaudio cudatoolkit=11.0 -c pytorch
             conda install numpy matplotlib scikit-learn pandas tqdm jupyter scikit-image
             conda install -c conda-forge tensorboardx
             conda install -c conda-forge opencv
             conda install -c anaconda scipy=1.5.3
             ```
+        - Alternate Directions: Install using [`torch.yml`](torch.yml)
         - Note: All tests were run on `Ubuntu 21.04` with NVIDIA GeForce RTX 3080 Mobile / Max-Q 16GB VRAM GPU and `CUDA Version: 11.3` [Checked via `nvidia-smi`]
     - **Training Results**
         - [log_MiccaiRecon](logs/log_MiccaiRecon)
@@ -40,7 +41,7 @@
 
 ---
 
-### [Proposed Model] - Semi-Supervised Semantic Segmentation for m2caiseg
+### [Proposed Model] - Semi-Supervised Semantic Segmentation for m2caiseg and cholecSeg
 1. ARCNet will aim to utilize a Semi-Supervised approach for improving the task of Semantic Segmantion for live surgical video datasets.
     * The ["Three Ways to Improve Semantic Segmentation with Self-Supervised Depth Estimation"](https://arxiv.org/abs/2012.10782) paper provides a successful framework for semi-supervised semantic segmentation that is enhanced by self-supervised monocular depth estimation from unlabeled image sequences. They transfer knowledge from features learned during self-supervised depth estimation to semantic segmentation.
     * Github Repo: [Link](https://github.com/lhoyer/improving_segmentation_with_selfsupervised_depth)
@@ -50,3 +51,15 @@
     * The image sequences will consist of 3-tuples in the format of `(prior frame, current frame, next frame)` since that is what the paper uses in their method.
 3. To improve on the paper from [1](https://arxiv.org/abs/2012.10782), we will utilize a better self-supervised depth estimation model that was developed by Niantic Labs. The paper originally used the [Monodepth2](https://github.com/nianticlabs/monodepth2) model, but we will use the new-and-improved [manydepth](https://github.com/nianticlabs/manydepth) model (also developed by Niantic Labs) for our work.
     * We use this depth estimation model since it provides overall improvements for depth estimation and will ideally transfer these improvements to our semantic segmentation model.
+
+---
+
+## Ablation
+
+[x] UNet w/ TenCrop, batch size = 2, epochs = 10, lr = 0.001
+
+[x] UNet w/o TenCrop, batch size = 16, epochs = 50, lr = 0.001
+
+## Debugging 
+
+Note: Used an online RGB tool to capture all unique RGB colors in the color masks for the CholecSeg8k dataset.

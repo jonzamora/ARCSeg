@@ -8,6 +8,7 @@ import cv2
 import math
 import os
 import json
+import matplotlib.pyplot as plt
 
 ########################### Evaluation Utilities ##############################
 
@@ -171,6 +172,14 @@ def generateLabel4CE(gt, key):
     '''
         Generates the label for Cross Entropy Loss from a batch of groundtruth
         segmentation images.
+
+        Given the ground truth mask for the surgical image, we perform two iterations:
+
+        The outer iteration iterates over all the images in the provided GT batch.
+
+        The inner iteration iterates over the images pixel classes and assigns the pixels
+        to their numbered classes (e.g. 0 - 12 are the numbered classes, and the RGB pixels
+        are re-assigned to fit the 0 - 12 format for one-hot encoding)
     '''
 
     batch = gt.numpy()
@@ -185,13 +194,13 @@ def generateLabel4CE(gt, key):
             rgb = key[k]
             mask = np.where(np.all(img == rgb, axis = 2))
             catMask[mask] = k
-
+        
         catMaskTensor = torch.from_numpy(catMask).unsqueeze(0)
+
         if 'label' in locals():
             label = torch.cat((label, catMaskTensor), 0)
         else:
             label = catMaskTensor
-
     return label.long()
 
 def reverseOneHot(batch, key):
