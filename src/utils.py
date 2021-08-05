@@ -9,6 +9,7 @@ import math
 import os
 import json
 import matplotlib.pyplot as plt
+import logging
 
 ########################### Evaluation Utilities ##############################
 
@@ -107,6 +108,20 @@ def convertToOneHot(batch, use_gpu):
     return oneHot
 
 ############################# Regular Utilities ###############################
+def get_logger(name, log_path=None):
+    
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s: %(message)s', datefmt='%Y/%m/%d %H:%M:%S')
+
+    if log_path:
+        handler = logging.FileHandler(log_path, 'w')
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+    return logger
+
 
 def displaySamples(img, generated, gt, use_gpu, key, save, epoch, imageNum,
     save_dir):
@@ -277,7 +292,7 @@ def generateToolPresenceVector(gt):
 
     # Disentangle the classes to a Python dict
     # We only use the MICCAI classes here since we need to do tool classification
-    json_path = '/home/jonzamora/Desktop/segNets/datasets/miccaiClasses.json'
+    json_path = '/home/jonzamora/Desktop/arclab/ARCSeg/src/datasets/classes/miccaiClasses.json'
     classes_key = json.load(open(json_path))['classes']
     key = disentangleKey(classes_key)
 

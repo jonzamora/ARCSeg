@@ -1,0 +1,142 @@
+{
+    "classes": [
+      {
+        "id": "0",
+        "name": "Abdominal Wall and Diaphragm",
+        "color": "[253,101,14]",
+        "super-category": "organ"
+      },
+      {
+        "id": "1",
+        "name": "Blood Pool",
+        "color": "[41,10,12]",
+        "super-category": "fluid"
+      },
+      {
+        "id": "2",
+        "name": "Censored out of Body",
+        "color": "[62,62,62]",
+        "super-category": "misc"
+      },
+      {
+        "id": "3",
+        "name": "Clip",
+        "color": "[255,51,0]",
+        "super-category": "tool"
+      },
+      {
+        "id": "4",
+        "name": "Cystic Artery",
+        "color": "[51,221,255]",
+        "super-category": "vein"
+      },
+      {
+        "id": "5",
+        "name": "Cystic Duct",
+        "color": "[153, 255, 51]",
+        "super-category": "organ"
+      },
+      {
+        "id": "6",
+        "name": "Drainage",
+        "color": "[1, 68, 34]",
+        "super-category": "fluid"
+      },
+      {
+        "id": "7",
+        "name": "Fatty Tissue",
+        "color": "[255,255,0]",
+        "super-category": "organ"
+      },
+      {
+        "id": "8",
+        "name": "Gallbladder",
+        "color": "[25, 176, 34]",
+        "super-category": "organ"
+      },
+      {
+        "id": "9",
+        "name": "Gallbladder Resection Bed",
+        "color": "[0,55,104]",
+        "super-category": "organ"
+      },
+      {
+        "id": "10",
+        "name": "Gastrointestinal Tract",
+        "color": "[74,165,255]",
+        "super-category": "organ"
+      },
+      {
+        "id": "11",
+        "name": "Gauze",
+        "color": "[255, 255, 255]",
+        "super-category": "tool"
+      },
+      {
+        "id": "12",
+        "name": "Hilum of Liver / Hepatoduodenal Ligament",
+        "color": "[255, 168, 0]",
+        "super-category": "organ"
+      },
+      {
+        "id": "13",
+        "name": "Inside of Trocar",
+        "color": "[160, 56, 133]",
+        "super-category": "organ"
+      },
+      {
+        "id": "14",
+        "name": "Instrument",
+        "color": "[101, 46, 151]",
+        "super-category": "tool"
+      },
+      {
+        "id": "15",
+        "name": "Liver",
+        "color": "[136, 0, 0]",
+        "super-category": "organ"
+      },
+      {
+        "id": "16",
+        "name": "Omentum",
+        "color": "[172, 157, 255]",
+        "super-category": "organ"
+      },
+      {
+        "id": "17",
+        "name": "Other",
+        "color": "[204, 204, 204]",
+        "super-category": "misc"
+      },
+      {
+        "id": "18",
+        "name": "Out of Image",
+        "color": "[82, 82, 82]",
+        "super-category": "misc"
+      },
+      {
+        "id": "19",
+        "name": "Round and Falciform Ligament of the Liver",
+        "color": "[61, 245, 61]",
+        "super-category": "organ"
+      },
+      {
+        "id": "20",
+        "name": "Specimenbag",
+        "color": "[79, 48, 31]",
+        "super-category": "tool"
+      },
+      {
+        "id": "21",
+        "name": "Trocar",
+        "color": "[255, 51, 119]",
+        "super-category": "tool"
+      },
+      {
+        "id": "22",
+        "name": "Uncertainties",
+        "color": "[240, 240, 240]",
+        "super-category": "misc"
+      }
+    ]
+  }

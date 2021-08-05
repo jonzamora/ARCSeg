@@ -51,15 +51,4 @@
     * The image sequences will consist of 3-tuples in the format of `(prior frame, current frame, next frame)` since that is what the paper uses in their method.
 3. To improve on the paper from [1](https://arxiv.org/abs/2012.10782), we will utilize a better self-supervised depth estimation model that was developed by Niantic Labs. The paper originally used the [Monodepth2](https://github.com/nianticlabs/monodepth2) model, but we will use the new-and-improved [manydepth](https://github.com/nianticlabs/manydepth) model (also developed by Niantic Labs) for our work.
     * We use this depth estimation model since it provides overall improvements for depth estimation and will ideally transfer these improvements to our semantic segmentation model.
-
----
-
-## Ablation
-
-[x] UNet w/ TenCrop, batch size = 2, epochs = 10, lr = 0.001
-
-[x] UNet w/o TenCrop, batch size = 16, epochs = 50, lr = 0.001
-
-## Debugging 
-
-Note: Used an online RGB tool to capture all unique RGB colors in the color masks for the CholecSeg8k dataset.
+4. Evaluate Fine Tuning Methods for your Network + effectiveness of Transfer Learning

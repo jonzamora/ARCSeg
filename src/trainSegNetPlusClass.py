@@ -94,10 +94,10 @@ def main():
     }
 
     # Data Loading
-    data_dir = '/home/jonzamora/Desktop/segNets/datasets/miccaiSegRefined'
+    data_dir = '/home/jonzamora/Desktop/arclab/ARCSeg/src/datasets/miccaiSegOrgans'
     # data_dir = '/home/salman/pytorch/segmentationNetworks/datasets/miccaiSegRefined'
     # json path for class definitions
-    json_path = '/home/jonzamora/Desktop/segNets/datasets/miccaiSegClasses.json'
+    json_path = '/home/jonzamora/Desktop/arclab/ARCSeg/src/datasets/classes/miccaiSegClasses.json'
 
     image_datasets = {x: miccaiSegPlusClassDataset(os.path.join(data_dir, x), data_transforms[x],
                         json_path) for x in ['train', 'test']}
@@ -136,7 +136,7 @@ def main():
          for param in model.encoder.parameters():
              param.requires_grad = False
     
-         optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = args.wd)
+    optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = args.wd)
     # else:
     # optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = args.wd)
 
@@ -226,6 +226,11 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key):
 
         # Compute output
         classified, segmented = model(img)
+
+        print("SEG SHAPE:", segmented.shape) #torch.Size([16, 13, 224, 224])
+        print("LABEL SHAPE:", seg_label.shape) #torch.Size([16, 224, 224])
+        exit()
+
         seg_loss = model.dice_loss(segmented, seg_label)
         class_loss = criterion(classified, class_label)
         total_loss = seg_loss + class_loss

@@ -1,1 +1,0 @@
-python ../src/mainCholecSeg.py --save-dir=save_cholecSeg --batchSize 16 --lr 0.001 --epochs 10 |& tee -a save_cholecSeg/log_cholecSegNet_batch16_lr001_epochs10

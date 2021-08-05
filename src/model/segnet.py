@@ -1,9 +1,6 @@
-"""
-This is not an implementation for
-SegNet: A Deep Convolutional Encoder-Decoder Architecture for Image Segmentation
-
-I'll change the file names later
-"""
+'''
+SegNet
+'''
 
 
 import torch
@@ -15,26 +12,27 @@ class encoder(nn.Module):
         Encoder for the Segmentation network
     '''
 
-    def __init__(self, batchNorm_momentum):
+    def __init__(self, batchNorm_momentum, num_classes=23):
         super(encoder, self).__init__()
+        self.batchNorm_momentum = batchNorm_momentum
+        self.num_classes = num_classes
         self.main = nn.Sequential(
-            nn.Conv2d(3, 64, 4, 2, 1, dilation=2, bias=False),
-            # nn.BatchNorm2d(64, momentum=batchNorm_momentum),
+            nn.Conv2d(3, 64, 4, 2, 1, dilation=1, bias=False),
             nn.ReLU(True),
 
-            nn.Conv2d(64, 128, 4, 2, 1, dilation=2, bias=False),
+            nn.Conv2d(64, 128, 4, 2, 1, dilation=1, bias=False),
             nn.BatchNorm2d(128, momentum=batchNorm_momentum),
             nn.ReLU(True),
 
-            nn.Conv2d(128, 256, 4, 2, 1, dilation=2, bias=False),
+            nn.Conv2d(128, 256, 4, 2, 1, dilation=1, bias=False),
             nn.BatchNorm2d(256, momentum=batchNorm_momentum),
             nn.ReLU(True),
 
-            nn.Conv2d(256, 512, 4, 2, 1, dilation=2, bias=False),
+            nn.Conv2d(256, 512, 4, 2, 1, dilation=1, bias=False),
             nn.BatchNorm2d(512, momentum=batchNorm_momentum),
             nn.ReLU(True),
 
-            nn.Conv2d(512, 1024, 4, 1, 0, dilation=2, bias=False),
+            nn.Conv2d(512, 1024, 4, 1, 0, dilation=1, bias=False),
             nn.BatchNorm2d(1024, momentum=batchNorm_momentum),
             nn.ReLU(True)
         )
@@ -48,7 +46,7 @@ class decoder(nn.Module):
         Decoder for the Segmentation Network
     '''
 
-    def __init__(self, batchNorm_momentum, num_classes=13):
+    def __init__(self, batchNorm_momentum, num_classes=23):
         super(decoder, self).__init__()
         self.main = nn.Sequential(
             nn.ConvTranspose2d(1024, 512, 4, 1, 0, bias=False),
@@ -83,18 +81,20 @@ class SegNet(nn.Module):
         Segnet network
     '''
 
-    def __init__(self, batchNorm_momentum, num_classes):
+    def __init__(self, batchNorm_momentum, num_classes=23):
         super(SegNet, self).__init__()
-        self.encoder = encoder(batchNorm_momentum)
-        self.decoder = decoder(batchNorm_momentum, num_classes)
+        self.batchNorm_momentum = batchNorm_momentum
+        self.num_classes = num_classes
+        self.encoder = encoder(self.batchNorm_momentum, self.num_classes)
+        self.decoder = decoder(self.batchNorm_momentum, self.num_classes)
 
     def forward(self, x):
         latent = self.encoder(x)
-        print('Latent Shape')
-        print(latent.shape)
+        #print('Latent Shape')
+        #print(latent.shape)
         output = self.decoder(latent)
-        print('Output Shape')
-        print(output.shape)
+        #print('Output Shape')
+        #print(output.shape)
 
         return output
 
@@ -108,7 +108,7 @@ class SegNet(nn.Module):
         eps = 0.0001
 
         encoded_target = output.detach() * 0
-        print("encoded target:", encoded_target.shape)
+        #print("encoded target:", encoded_target.shape)
         if ignore_index is not None:
             mask = target == ignore_index
             target = target.clone()

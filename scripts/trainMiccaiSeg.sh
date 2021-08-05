@@ -1,1 +1,0 @@
-python ../src/mainMiccaiSeg.py --save-dir=save_miccaiSeg --batchSize 2 --lr 0.001 --epochs 100 |& tee -a save_miccaiSeg/log_miccaiSeg

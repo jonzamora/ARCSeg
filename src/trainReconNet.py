@@ -1,5 +1,5 @@
 '''
-Image Segmentation using SegNet
+Image Reconstruction using ReconNet
 '''
 
 import argparse

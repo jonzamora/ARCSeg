@@ -1,1 +1,0 @@
-python ../src/evaulate.py --save-dir=/data/miccaiSegEval --saveTest True --model /data/miccaiSegResults7/checkpoint_99.tar |& tee -a log_MiccaiSegEval

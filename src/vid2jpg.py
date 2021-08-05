@@ -1,3 +1,10 @@
+'''
+Vid2JPG
+Converts Videos to JPG files
+(1 JPG = 1 Frame in Video)
+Note: Configured for 25 FPS Videos
+'''
+
 import cv2
 
 vidcap = cv2.VideoCapture('test_dataset/tool_video_15.mp4')
