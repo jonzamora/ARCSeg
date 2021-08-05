@@ -2,7 +2,7 @@
 
 model="unet"
 
-batch_size=16
+batch_size=3
 lr=1e-3
 epochs=50
 
