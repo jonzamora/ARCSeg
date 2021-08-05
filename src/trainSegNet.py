@@ -212,9 +212,11 @@ def main():
 
     logger.info(f"Training Starting")
     for epoch in range(args.epochs):
-        train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger)
+        train_loss = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger)
 
-        validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger)
+        val_loss = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger)
+
+        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Val Loss={val_loss}")
 
         # Calculate the metrics
         print(f'\n>>>>>>>>>>>>>>>>>> Evaluation Metrics {epoch+1}/{args.epochs} <<<<<<<<<<<<<<<<<', flush=True)
@@ -366,8 +368,8 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
         
         utils.displaySamples(img, seg, gt, use_gpu, key, False, epoch, i, args.save_dir)
         
-    logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={total_train_loss/len(train_loop)}")
     losses.append(total_train_loss / len(train_loop))
+    return total_train_loss/len(train_loop)
 
 
 def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_mean, img_std, logger):
@@ -408,8 +410,8 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
         utils.displaySamples(img, seg, gt, use_gpu, key, args.saveTest, epoch, i, args.save_dir)
         evaluator.addBatch(seg, oneHotGT)
         
-    logger.info(f"Epoch {epoch+1}/{args.epochs}: Val Loss={total_val_loss/len(val_loop)}")
     losses.append(total_val_loss / len(val_loop))
+    return total_val_loss/len(val_loop)
 
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
