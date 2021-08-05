@@ -10,7 +10,7 @@ dataset="synapse"
 data_dir="/home/jonzamora/Desktop/arclab/ARCSeg/src/data/datasets/${dataset}"
 json_path="/home/jonzamora/Desktop/arclab/ARCSeg/src/data/classes/synapseSegClasses.json"
 
-save_dir="../results/SegNet/${dataset}/bs_${batch_size}_lr${lr}_e${epochs}"
+save_dir="../results/${model}/${dataset}/bs_${batch_size}_lr${lr}_e${epochs}"
 
 mkdir -p $save_dir
 
