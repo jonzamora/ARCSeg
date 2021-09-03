@@ -5,11 +5,10 @@ Utilites for data visualization and manipulation.
 import torch
 import numpy as np
 import cv2
-import math
 import os
-import json
-import matplotlib.pyplot as plt
 import logging
+from torch.nn.functional import one_hot
+
 
 ########################### Evaluation Utilities ##############################
 
@@ -32,7 +31,7 @@ class Evaluate():
         self.fp = 0
         self.fn = 0
 
-    def addBatch(self, seg, gt):
+    def addBatch(self, seg, gt, args):
         '''
             Add a batch of generated segmentation tensors and the respective
             groundtruth tensors.
@@ -44,7 +43,15 @@ class Evaluate():
         '''
 
         # Convert Seg to one-hot encoding
-        seg = convertToOneHot(seg, self.use_gpu).byte()
+
+        if args.dataset == "synapse":
+            seg = seg[:,0:21:,:,]
+            gt = gt[:,0:21:,:,]
+
+        seg = torch.argmax(seg, dim=1)
+        seg = one_hot(seg, self.num_classes - 1).permute(0, 3, 1, 2)
+        
+        #seg = convertToOneHot(seg, self.use_gpu).byte()
         seg = seg.float()
         gt = gt.float()
 
@@ -86,12 +93,14 @@ def convertToOneHot(batch, use_gpu):
 
     batch = batch.data.numpy()
 
+    oneHot = []
+
     # Iterate over all images in a batch
     for i in range(len(batch)):
-        vec = batch[i,:,:,:]
-        idxs = np.argmax(vec, axis=0)
+        vec = batch[i]
+        idxs = vec
 
-        single = np.zeros([1, batch.shape[2], batch.shape[3]])
+        single = np.zeros([1, batch.shape[1], batch.shape[2]])
         # Iterate over all the key-value pairs in the class Key dict
         for k in range(batch.shape[1]):
             mask = idxs == k
@@ -99,11 +108,10 @@ def convertToOneHot(batch, use_gpu):
             single = np.concatenate((single, mask), axis=0)
 
         single = np.expand_dims(single[1:,:,:], axis=0)
-        if 'oneHot' in locals():
-            oneHot = np.concatenate((oneHot, single), axis=0)
-        else:
-            oneHot = single
+        
+        oneHot.append(single)
 
+    oneHot = np.concatenate(oneHot)
     oneHot = torch.from_numpy(oneHot.astype(np.uint8))
     return oneHot
 
@@ -123,8 +131,7 @@ def get_logger(name, log_path=None):
     return logger
 
 
-def displaySamples(img, generated, gt, use_gpu, key, save, epoch, imageNum,
-    save_dir):
+def displaySamples(img, generated, gt, use_gpu, key, saveSegs, epoch, imageNum, save_dir=None, total_epochs=None):
     ''' Display the original, generated, and the groundtruth image.
         If a batch is used, it displays only the first image in the batch.
 
@@ -139,23 +146,28 @@ def displaySamples(img, generated, gt, use_gpu, key, save, epoch, imageNum,
         generated = generated.cpu()
 
     gt = gt.numpy()
-    gt = np.transpose(np.squeeze(gt[0,:,:,:]), (1,2,0))
-    gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
+    gt = np.transpose(np.squeeze(gt[0,:,:,:]), (1,2,0)) # [256, 256, 3]
+    gt = gt.astype(np.uint8)
+    #print(f"gt shape: {gt.shape}, gt dtype: {gt.dtype}")
+    gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB) / 255
 
     generated = generated.data.numpy()
     generated = reverseOneHot(generated, key)
-    generated = np.squeeze(generated[0,:,:,:]).astype(np.uint8)
+    generated = np.squeeze(generated[0]).astype(np.uint8)
     generated = cv2.cvtColor(generated, cv2.COLOR_BGR2RGB) / 255
 
     img = img.data.numpy()
-    img = np.transpose(np.squeeze(img[0,:,:,:]), (1,2,0))
+    img = np.transpose(np.squeeze(img[0]), (1,2,0))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     stacked = np.concatenate((img, generated, gt), axis = 1)
 
-    if save:
+    if saveSegs == "True" and (epoch+1) == total_epochs:
         file_name = 'epoch_%d_img_%d.png' %(epoch, imageNum)
         save_path = os.path.join(save_dir, file_name)
+        print(f"saving {save_path}")
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
         cv2.imwrite(save_path, stacked*255)
 
     cv2.namedWindow('Input | Gen | GT', cv2.WINDOW_NORMAL)
@@ -199,6 +211,7 @@ def generateLabel4CE(gt, key):
 
     batch = gt.numpy()
     # Iterate over all images in a batch
+    label = []
     for i in range(len(batch)):
         img = batch[i,:,:,:]
         img = np.transpose(img, (1,2,0))
@@ -212,10 +225,9 @@ def generateLabel4CE(gt, key):
         
         catMaskTensor = torch.from_numpy(catMask).unsqueeze(0)
 
-        if 'label' in locals():
-            label = torch.cat((label, catMaskTensor), 0)
-        else:
-            label = catMaskTensor
+        label.append(catMaskTensor)
+
+    label = torch.cat(label, 0)
     return label.long()
 
 def reverseOneHot(batch, key):
@@ -225,10 +237,12 @@ def reverseOneHot(batch, key):
         numpy images in RGB (not BGR).
     '''
 
+    generated = []
+
     # Iterate over all images in a batch
     for i in range(len(batch)):
-        vec = batch[i,:,:,:]
-        idxs = np.argmax(vec, axis=0)
+        vec = batch[i]
+        idxs = vec
 
         segSingle = np.zeros([idxs.shape[0], idxs.shape[1], 3])
 
@@ -236,80 +250,15 @@ def reverseOneHot(batch, key):
         for k in range(len(key)):
             rgb = key[k]
             mask = idxs == k
-            #mask = np.where(np.all(idxs == k, axis=-1))
             segSingle[mask] = rgb
 
         segMask = np.expand_dims(segSingle, axis=0)
-        if 'generated' in locals():
-            generated = np.concatenate((generated, segMask), axis=0)
-        else:
-            generated = segMask
+        
+        generated.append(segMask)
+    
+    generated = np.concatenate(generated)
 
     return generated
-
-def generatePresenceVector(batch, key):
-    '''
-        Generate a vector with dimensions of classes equal to the number of
-        classes. Each elements corresponds to the presence of a particular
-        class in the image: It is the fraction of pixels a particular category
-        in an image, and is 0 if the class is absent from that image.
-    '''
-    batch = batch.numpy()
-    # Iterate over all images in a batch
-    for i in range(len(batch)):
-        img = batch[i,:,:,:]
-        imgSize = img.shape[1] * img.shape[2]
-        img = np.transpose(img, (1,2,0))
-        presence = np.zeros(len(key) + 1) # +1 for the background class
-
-        # Iterate over all the key-value pairs in the class Key dict
-        for k in range(len(key)):
-            rgb = key[k]
-            mask = np.where(np.all(img == rgb, axis = -1))
-            presence[k] = len(mask[0])/imgSize
-
-        # Check for background pixels [0,0,0]
-        rgb = np.array([0,0,0])
-        mask = np.where(np.all(img == rgb, axis = -1))
-        presence[19] = len(mask[0])/imgSize
-
-        presence = torch.from_numpy(presence).unsqueeze(0)
-
-        if 'label' in locals():
-            label = torch.cat((label, presence), 0)
-        else:
-            label = presence
-
-    return label
-
-def generateToolPresenceVector(gt):
-    '''
-        Generates a 7-dimensional vector, where each elements corresponds to
-        the presence of a particular tool class in the image: It is 1 if a tool
-        from a particular category is presebt, and is 0 if the tool is absent
-        from that image.
-    '''
-
-    # Disentangle the classes to a Python dict
-    # We only use the MICCAI classes here since we need to do tool classification
-    json_path = '/home/jonzamora/Desktop/arclab/ARCSeg/src/datasets/classes/miccaiClasses.json'
-    classes_key = json.load(open(json_path))['classes']
-    key = disentangleKey(classes_key)
-
-    img = np.array(gt)
-
-    presence = np.zeros(7)
-
-    # Iterate over all the key-value pairs in the class Key dict
-    for k in range(len(key)):
-        rgb = key[k]
-        mask = np.where(np.all(img == rgb, axis = 2))
-        if len(mask[0]) > 0:
-            presence[k] = 1
-
-    label = torch.from_numpy(presence)
-
-    return label
 
 def generateOneHot(gt, key):
     '''
@@ -340,60 +289,6 @@ def generateOneHot(gt, key):
     label = oneHot.view(len(batch),len(key),img.shape[0],img.shape[1])
     return label
 
-def generateGTmask(batch, key):
-    '''
-        Generates the category-wise encoded vector for the segmentation classes
-        for a batch of images.
-        Returns a tensor of size: [batchSize, imgSize**2, 1]
-    '''
-    batch = batch.numpy()
-    # Iterate over all images in a batch
-    for i in range(len(batch)):
-        img = batch[i,:,:,:]
-        img = np.transpose(img, (1,2,0))
-        cat_mask = np.ones((img.shape[0], img.shape[1]))
-        # Multiply by 19 since 19 is considered label for the background class
-        cat_mask = cat_mask * 19
-
-        # Iterate over all the key-value pairs in the class Key dict
-        for k in range(len(key)):
-            rgb = key[k]
-            mask = np.where(np.all(img == rgb, axis = -1))
-            cat_mask[mask] = k
-
-        cat_mask = torch.from_numpy(cat_mask).view(-1,1).unsqueeze(0)
-
-        if 'label' in locals():
-            label = torch.cat((label, cat_mask), 0)
-        else:
-            label = cat_mask
-
-    label = torch.squeeze(label, dim=2)
-    return label
-
-def labelToImage(label, key):
-    '''
-        Generates the image from the output label.
-        Basically the inverse process of the generateGTmask function.
-    '''
-
-    img_dim = int(math.sqrt(label.shape[1]))
-    label = label[0,:]
-    label = np.around(label).astype(int)
-    gen = np.ones((label.shape[0], 3)) * 255
-
-    for k in range(len(key) + 1):
-        if k == 19:
-            rgb = [0, 0, 0]
-        else:
-            rgb = key[k]
-        mask = label == k
-        gen[mask] = rgb
-
-    gen = np.reshape(gen, (img_dim, img_dim, 3))
-
-    return gen
-
 def normalize(batch, mean, std):
     '''
         Normalizes a batch of images, provided the per-channel mean and
@@ -413,138 +308,40 @@ def normalize(batch, mean, std):
 
     return concat
 
-#################### Reconstruction Utilities ######################
+'''
+Loss Functions
+'''
 
-def generateLabels4ReconCE(batch):
-    '''
-        Generates the label for Cross Entropy Loss from a batch of images.
-        Also separates into the three RGB channels (for channel-wise loss).
+def dice_loss(output, target, weights=None, ignore_index=None):
+        '''
+            output : NxCxHxW Variable
+            target :  NxHxW LongTensor
+            weights : C FloatTensor
+            ignore_index : int index to ignore from loss
+        '''
+        eps = 0.0001
 
-        Input: PyTorch Tensor
-        Output: 3 x PyTorch Tensors corrsponding to the RGB channels
-    '''
-
-    # Iterate over all images in a batch
-    for i in range(len(batch)):
-        img = batch[i,:,:,:]
-
-        R = img[0,:,:].unsqueeze(0)
-        G = img[1,:,:].unsqueeze(0)
-        B = img[2,:,:].unsqueeze(0)
-
-        if 'R_label' in locals():
-            R_label = torch.cat((R_label, R), 0)
+        encoded_target = output.detach() * 0
+        if ignore_index is not None:
+            mask = target == ignore_index
+            target = target.clone()
+            target[mask] = 0
+            encoded_target.scatter_(1, target.unsqueeze(1), 1)
+            mask = mask.unsqueeze(1).expand_as(encoded_target)
+            encoded_target[mask] = 0
         else:
-            R_label = R
-        if 'G_label' in locals():
-            G_label = torch.cat((G_label, G), 0)
-        else:
-            G_label = G
-        if 'B_label' in locals():
-            B_label = torch.cat((B_label, B), 0)
-        else:
-            B_label = B
+            encoded_target.scatter_(1, target.unsqueeze(1), 1)
 
-    return R_label.long(), G_label.long(), B_label.long()
+        if weights is None:
+            weights = 1
 
-def displayReconSamples(img, gen, use_gpu):
-    ''' Display the original and the reconstructed image.
-        If a batch is used, it displays only the first image in the batch.
+        intersection = output * encoded_target
+        numerator = 2 * intersection.sum(0).sum(1).sum(1)
+        denominator = output + encoded_target
 
-        Args:
-            input image, R-channel output, G-channel output, B-channel output,
-            use_gpu
-    '''
+        if ignore_index is not None:
+            denominator[mask] = 0
+        denominator = denominator.sum(0).sum(1).sum(1) + eps
+        loss_per_channel = weights * (1 - (numerator / denominator))
 
-    if use_gpu:
-        img = img.cpu()
-        gen = gen.cpu()
-
-    gen = gen.data.numpy()
-    gen = np.transpose(np.squeeze(gen[0,:,:,:]), (1,2,0))
-    gen = cv2.cvtColor(gen, cv2.COLOR_BGR2RGB)
-
-    img = img.data.numpy()
-    img = np.transpose(np.squeeze(img[0,:,:,:]), (1,2,0))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    stacked = np.concatenate((img, gen), axis = 1)
-
-    cv2.namedWindow('Input | Generated', cv2.WINDOW_NORMAL)
-    cv2.imshow('Input | Generated', stacked)
-
-    cv2.waitKey(1)
-
-def reverseReconOneHot(R_batch, G_batch, B_batch):
-    '''
-        Generates the reconstructed image from the output of a Reconstruction
-        network.
-        Takes a batch of numpy one-hot tensors on individual RGB channels
-        and returns a batch of numpy images in RGB (not BGR).
-    '''
-    batchSize = len(R_batch)
-    # Iterate over all images in a batch
-    for i in range(batchSize):
-        R = np.expand_dims(np.argmax(R_batch[i,:,:], axis=0), axis=0)
-        G = np.expand_dims(np.argmax(G_batch[i,:,:], axis=0), axis=0)
-        B = np.expand_dims(np.argmax(B_batch[i,:,:], axis=0), axis=0)
-
-        concatenated = np.concatenate((R, G, B), axis=0)
-        if 'img' in locals():
-            img = np.concatenate((img, concatenated), axis=0)
-        else:
-            img = concatenated
-
-    return img
-
-################ Gray Segmentation Reconstruction Utilities ###############
-
-def reverseReconOneHotGray(batch):
-    '''
-        Generates the reconstructed image from the output of a Reconstruction
-        network.
-        Takes a batch of numpy one-hot tensors channels and returns a batch of
-        numpy images in as the same output concatenated three time to represent
-        RGB.
-    '''
-    # Iterate over all images in a batch
-    for i in range(len(batch)):
-        c = np.expand_dims(np.argmax(R_batch[i,:,:], axis=0), axis=0)
-
-        concatenated = np.concatenate((c, c, c), axis=0)
-
-        if 'img' in locals():
-            img = np.concatenate((img, concatenated), axis=0)
-        else:
-            img = concatenated
-
-    return img
-
-def displayReconSamplesGray(img, gen, use_gpu):
-    ''' Display the original and the reconstructed image.
-        If a batch is used, it displays only the first image in the batch.
-
-        Args:
-            input image, R-channel output, G-channel output, B-channel output,
-            use_gpu
-    '''
-
-    if use_gpu:
-        img = img.cpu()
-        gen = gen.cpu()
-
-    gen = gen.data.numpy()
-    gen = reverseReconOneHotGray(gen)
-    gen = np.transpose(np.squeeze(gen[0,:,:,:]), (1,2,0))
-    gen = cv2.cvtColor(gen, cv2.COLOR_BGR2RGB)
-
-    img = img.data.numpy()
-    img = np.transpose(np.squeeze(img[0,:,:,:]), (1,2,0))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    stacked = np.concatenate((img, gen), axis = 1)
-
-    cv2.namedWindow('Input | Generated', cv2.WINDOW_NORMAL)
-    cv2.imshow('Input | Generated', stacked)
-
-    cv2.waitKey(1)
+        return loss_per_channel.sum() / output.size(1)

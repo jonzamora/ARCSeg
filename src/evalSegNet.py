@@ -1,30 +1,28 @@
 '''
-Stand-alone utility to evaulate segmentation predictions using a trained model.
+Semantic Segmentation Network Evaluation
+(Work-In-Progress)
+Stand-alone utility to evaluate segmentation predictions using a trained model.
 '''
 
 import argparse
 import os
 
-import numpy as np
-import cv2
 from PIL import Image
 
 import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
-import torch.optim as optim
 from torch.autograd import Variable
 import torch.utils.data
 import torchvision.transforms as transforms
-import torch.nn.functional as F
 
 import utils
 from model.segnet import SegNet
-from datasets.miccaiSegDataLoader import miccaiSegDataset
+from data.dataloaders.SegNetDataLoaderV2 import SegNetDataset
 
-parser = argparse.ArgumentParser(description='PyTorch miccaiSeg Evaluation')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+parser = argparse.ArgumentParser(description='PyTorch Semantic Segmentation Evaluation')
+parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
             help='number of data loading workers (default: 4)')
 parser.add_argument('--batchSize', default=1, type=int,
             help='Mini-batch size (default: 1)')
@@ -68,13 +66,12 @@ def main():
     # json path for class definitions
     json_path = '/home/salman/pytorch/segmentationNetworks/datasets/miccaiSegOrganClasses.json'
 
-    image_dataset = miccaiSegDataset(os.path.join(data_dir, 'test'), data_transform,
-                        json_path)
+    image_dataset = SegNetDataset(os.path.join(data_dir, 'test'), data_transform, json_path)
 
     dataloader = torch.utils.data.DataLoader(image_dataset,
-                                                  batch_size=args.batchSize,
-                                                  shuffle=True,
-                                                  num_workers=args.workers)
+                                             batch_size=args.batchSize,
+                                             shuffle=True,
+                                             num_workers=args.workers)
 
     # Get the dictionary for the id and RGB value pairs for the dataset
     classes = image_dataset.classes
@@ -82,6 +79,7 @@ def main():
     num_classes = len(key)
 
     # Initialize the model
+    # TODO: match model initialization code with trainSegNet.py (i.e. model = UNet, ResNetUNet, etc.)
     model = SegNet(args.bnMomentum, num_classes)
 
     # Load the saved model
@@ -146,11 +144,9 @@ def validate(val_loader, model, criterion, key, evaluator):
         seg = model(img)
         loss = model.dice_loss(seg, label)
 
-        print('[%d/%d] Loss: %.4f'
-              % (i, len(val_loader)-1, loss.mean().data[0]))
+        print('[%d/%d] Loss: %.4f' % (i, len(val_loader)-1, loss.mean().data[0]))
 
-        utils.displaySamples(img, seg, gt, use_gpu, key, args.saveTest, 0,
-                             i, args.save_dir)
+        utils.displaySamples(img, seg, gt, use_gpu, key, args.saveTest, 0, i, args.save_dir)
 
         evaluator.addBatch(seg, oneHotGT)
 

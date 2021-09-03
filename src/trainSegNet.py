@@ -6,11 +6,10 @@ Semantic Segmentation on Surgical Images
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data
-import torchvision.transforms as transforms
-from torch.autograd import Variable
+from torchsummary import summary
+import segmentation_models_pytorch as smp
 
 # general imports
 import argparse
@@ -19,22 +18,23 @@ import os
 # utility imports
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
-from torchvision.transforms.transforms import FiveCrop
+from torch.nn.functional import one_hot
 from tqdm import tqdm
 import random
 import utils
+from utils import dice_loss
 
 # model imports
 from model.unet import UNet
 from model.segnet import SegNet
-from data.dataloaders.SegNetDataLoader import SegNetDataset
+from model.resnet_unet import ResNetUNet
+from data.dataloaders.SegNetDataLoaderV2 import SegNetDataset # V2 is for loading entire dataset into memory, considering cholec data can easily fit into memory
 
 
-parser = argparse.ArgumentParser(description='SegNet Training Parameters')
+parser = argparse.ArgumentParser(description='Semantic Segmentation Training Parameters')
 
 # DATA PROCESSING
-parser.add_argument('-j', '--workers', default=0, type=int, metavar='N', help='number of data loading workers (default: 0)') # 4 * num_gpu
+parser.add_argument('--workers', default=0, type=int, help='number of data loading workers (default: 0)') # 4 * num_gpu
 parser.add_argument('--data_dir', type=str, help='data directory with train, test, and trainval image folders')
 parser.add_argument('--json_path', type=str, help='path to json file containing class information for segmentation')
 parser.add_argument('--dataset', type=str, help='dataset title (options: synapse / cholec / miccaiSegOrgans / miccaiSegRefined)')
@@ -48,35 +48,45 @@ parser.add_argument('--print-freq', '-p', default=1, type=int, metavar='N', help
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 parser.add_argument('--epochs', default=20, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
-parser.add_argument('--batchSize', default=2, type=int, help='Mini-batch size (default: 2)')
+parser.add_argument('--trainBatchSize', default=32, type=int, help='Training Mini-batch size (default: 32)')
+parser.add_argument('--valBatchSize', default=27, type=int, help='ValidationMini-batch size (default: 27)')
 parser.add_argument('--lr', '--learning-rate', default=0.001, type=float, metavar='LR', help='initial learning rate')
-parser.add_argument('--wd', '--weight_decay', default=0.0001, type=float, help='weight decay factor for optimizer')
+parser.add_argument('--optimizer', type=str, help='optimizer for the semantic segmentation network')
+parser.add_argument('--wd', default=0.001, type=float, help='weight decay factor for optimizer')
+parser.add_argument('--dice_loss_factor', default=0.5, type=float, help='loss weight factor for dice loss')
+parser.add_argument('--lr_steps', default=2, type=int, help='number of steps to take with StepLR')
+parser.add_argument('--step_gamma', default=0.1, type=float, help='gamma decay factor when stepping the Learning Rate')
+parser.add_argument('--resnetModel', default=18, type=float, help='resnet model number')
+parser.add_argument('--differential_lr', default=False, type=bool, help='use differential learning rate for pretrained encoder layers')
 
 # IMAGE PARAMETERS
 parser.add_argument('--resizedHeight', default=256, type=int, help='height of the input image to the network')
 parser.add_argument('--resizedWidth', default=256, type=int, help='width of the resized image to the network')
+parser.add_argument('--cropSize', default=256, type=int, help='height/width of the resized crop to the network')
+parser.add_argument('--display_samples', default="False", type=str, help='Display samples during training / validation')
+parser.add_argument('--save_samples', default="True", type=str, help='Save samples during final validation epoch')
+
 
 # EVALUATION PARAMETERS
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 
 # SAVE PARAMETERS
 parser.add_argument('--save_dir', dest='save_dir', help='The directory used to save the trained models', default='save_temp', type=str)
-parser.add_argument('--saveTest', default='False', type=str, help='Saves the validation/test images if True')
-
-
-best_prec1 = np.inf
+parser.add_argument('--seg_save_dir', dest='seg_save_dir', help='The directory used to save the segmentation results in the final epochs', type=str)
+parser.add_argument('--saveSegs', default="True", type=str, help='Saves the validation/test images if True')
 
 # GPU Check
 use_gpu = torch.cuda.is_available()
 curr_device = torch.cuda.current_device()
 device_name = torch.cuda.get_device_name(curr_device)
+device = torch.device('cuda' if use_gpu else 'cpu')
 
 print("CUDA AVAILABLE:", use_gpu, flush=True)
 print("CURRENT DEVICE:", curr_device, torch.cuda.device(curr_device), flush=True)
 print("DEVICE NAME:", device_name, flush=True)
 
 # Reproducibility
-seed = 6210
+seed = 6210 # [6210, 2021, 3005]
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 random.seed(seed)
@@ -86,45 +96,36 @@ torch.backends.cudnn.benchmark = False
 
 
 def main():
-    global args, best_prec1
+    # setup and display args on debug.log
+    global args
     args = parser.parse_args()
-    print(args)
+    print(f"args: {args}")
 
-    # Determine whether to save Input | Gen | GT images or not
-    if args.saveTest == 'True':
-        args.saveTest = True
-    elif args.saveTest == 'False':
-        args.saveTest = False
-
-
+    # logger setup and display args on train.log
     log_path = os.path.join(args.save_dir, "train.log")
     logger = utils.get_logger("model", log_path)
     logger.info(f"args: {args}")
 
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.Resize((args.resizedHeight, args.resizedWidth), interpolation=Image.NEAREST),
-            #transforms.FiveCrop((int(args.resizedHeight // 4), int(args.resizedWidth // 4))),
-            #transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
-            transforms.ToTensor()
-        ]),
-        'test': transforms.Compose([
-            transforms.Resize((args.resizedHeight, args.resizedWidth), interpolation=Image.NEAREST),
-            transforms.ToTensor()
-        ]),
-    }
+    image_size = [args.resizedHeight, args.resizedWidth]
 
-    # Data Loading
-    image_datasets = {x: SegNetDataset(os.path.join(args.data_dir, x), data_transforms[x], args.json_path, x, args.dataset) for x in ['train', 'test']}
+    # Data Augmentations and Loading
+    rotate, horizontal_flip, vertical_flip = True, True, True
+    logger.info(f"Data Augmentations: rotate={rotate}, horizontal_flip={horizontal_flip}, vertical_flip={vertical_flip}")
+
+    image_datasets = {x: SegNetDataset(os.path.join(args.data_dir, x), args.cropSize, args.json_path, x, args.dataset, 
+                      image_size, rotate=rotate, horizontal_flip=horizontal_flip, vertical_flip=vertical_flip) for x in ['train', 'test']}
 
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x],
-                                                  batch_size=args.batchSize,
+                                                  batch_size=args.trainBatchSize if x == 'train' else args.valBatchSize,
                                                   shuffle=True,
                                                   num_workers=args.workers,
-                                                  pin_memory=True)
-                  for x in ['train', 'test']}
+                                                  pin_memory=True,
+                                                  drop_last=True)
+                   for x in ['train', 'test']}
 
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'test']}
+    logger.info(f"# of Training Images: {dataset_sizes['train']}")
+    logger.info(f"# of Validation Images: {dataset_sizes['test']}")
 
     # Get the dictionary for the id and RGB value pairs for the dataset
     classes = image_datasets['train'].classes
@@ -134,18 +135,64 @@ def main():
     num_classes = len(key)
     print("NUM CLASSES:", num_classes, "\n", flush=True)
     
-    # Initialize the model
+    # Model Initialization
     if args.model == 'segnet':
         model = SegNet(args.batchnorm_momentum, num_classes)
+        model = model.to(device)
     elif args.model == 'unet':
-        model = UNet(n_channels=3, n_classes=num_classes, bilinear=False)
+        model = UNet(n_channels=3, n_classes=num_classes, bilinear=True)
+        model = model.to(device)
+    elif "resnet18" in args.model:
+        model = ResNetUNet(n_class=num_classes, resnet_model=18)
+        model = model.to(device)
+    elif args.model == 'smp_UNet++':
+        model = smp.UnetPlusPlus(
+            encoder_name="resnet18",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=num_classes
+        )
+        model = model.to(device)
+    elif args.model == 'smp_unet18':
+        model = smp.Unet(
+            encoder_name="resnet18",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=num_classes
+        )
+        model = model.to(device)
+    elif args.model == "smp_DeepLabV3+":
+        model = smp.DeepLabV3Plus(
+            encoder_name="resnet18",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=num_classes
+        )
+        model = model.to(device)
+    elif args.model == "smp_MANet":
+        model = smp.MAnet(
+            encoder_name="resnet18",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=num_classes
+        )
+        model = model.to(device)
     else:
         return "Model not available!"
+    
+    if args.cropSize != -1:
+        print(summary(model, input_size=(3, args.cropSize, args.cropSize)), flush=True)
+    else:
+        print(summary(model, input_size=(3, args.resizedHeight, args.resizedWidth)), flush=True)
+
+    # distributions of pixels per class
+    # # of classes in each image
 
     # Computed using "../notebooks/Calculate Mean and Std of Dataset.ipynb"
+    # NOTE: If you add any data to your training set, recompute the Mean and STD using the above jupyter notebook
     if args.dataset == "synapse":
-        image_mean = [0.423, 0.303, 0.325] # mean [R, G, B]
-        image_std = [0.235, 0.190, 0.196] # standard deviation [R, G, B]
+        image_mean = [0.425, 0.304, 0.325] # mean [R, G, B]
+        image_std = [0.239, 0.196, 0.202] # standard deviation [R, G, B]
     elif args.dataset == "cholec":
         image_mean = [0.337, 0.212, 0.182]
         image_std = [0.278, 0.218, 0.185]
@@ -153,45 +200,77 @@ def main():
         return "Dataset not available!"
 
 
-    # # Optionally resume from a checkpoint
-    # if args.resume:
-    #     if os.path.isfile(args.resume):
-    #         print("=> loading checkpoint '{}'".format(args.resume))
-    #         checkpoint = torch.load(args.resume)
-    #         #args.start_epoch = checkpoint['epoch']
-    #         pretrained_dict = checkpoint['state_dict']
-    #         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model.state_dict()}
-    #         model.state_dict().update(pretrained_dict)
-    #         model.load_state_dict(model.state_dict())
-    #         print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
-    #     else:
-    #         print("=> no checkpoint found at '{}'".format(args.resume))
-    #
-    #     # # Freeze the encoder weights
-    #     # for param in model.encoder.parameters():
-    #     #     param.requires_grad = False
-    #
-    #     optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = args.wd)
+    # Optionally resume training from a checkpoint
+    if args.resume:
+        if os.path.isfile(args.resume):
+            logger.info(f"=> loading checkpoint '{args.resume}'")
+            checkpoint = torch.load(args.resume)
+            args.start_epoch = checkpoint['epoch']
+            pretrained_dict = checkpoint['state_dict']
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model.state_dict()}
 
-    # Load the saved model
-    if os.path.isfile(args.resume):
-        print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
-        args.start_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['state_dict'])
-        print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
-    else:
-        print("=> no checkpoint found at '{}'".format(args.resume), flush=True)
+            new_weights = {}
+            
+            print("Pretrained Weight Dict:\n")
 
-    print(model, flush=True)
+            for n, p in pretrained_dict.items():
+                print(n, p.shape)
+
+            for n, p in pretrained_dict.items():
+                if n.split(".")[0] != "conv_last": # set all parameters to pretrained weights except conv_last
+                    new_weights[n] = p.data
+            
+            for n, p in model.named_parameters():
+                if n.split(".")[0] == "conv_last": # conv_last trained from scratch
+                    new_weights[n] = p.data
+                        
+            model.state_dict().update(new_weights)
+            model.load_state_dict(new_weights, strict=False)
+            logger.info(f"=> loaded checkpoint (epoch {checkpoint['epoch']})")
+        else:
+            print("=> no checkpoint found at '{}'".format(args.resume))
+    
+    # Freeze all weights except those in the output layer
+    #for n, p in model.named_parameters():
+    #    if n.split(".")[0] != "base_model":
+    #        p.requires_grad = False
     
     # Optimization Setup
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = args.wd)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2)    
+    if args.dataset == "synapse":
+        criterion = nn.CrossEntropyLoss(ignore_index=21)
+    else:
+        criterion = nn.CrossEntropyLoss()
+
+    if args.differential_lr == False:
+        if args.optimizer == "Adam":
+            optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay=args.wd)
+            logger.info(f"{args.optimizer} Optimizer LR = {args.lr} with WD = {args.wd}")
+        elif args.optimizer == "AdamW":
+            optimizer = optim.AdamW(model.parameters(), lr = args.lr, weight_decay=args.wd)
+            logger.info(f"{args.optimizer} Optimizer LR = {args.lr} with WD = {args.wd}")
+        elif args.optimizer == "SGD":
+            optimizer = optim.SGD(model.parameters(), lr = args.lr, momentum=0.9)
+            logger.info(f"{args.optimizer} Optimizer LR = {args.lr} with WD = {args.wd} and Momentum = 0.9")
+    else:
+        reduced_lr = args.lr * 0.1
+        if args.optimizer == "Adam":
+            optimizer = optim.Adam([
+                        {'params': model.base_model.parameters(), 'lr': args.lr}], lr=reduced_lr, weight_decay=args.wd)
+        elif args.optimizer == "SGD":
+            optimizer = optim.SGD([{'params': model.base_model.parameters(), 'lr': args.lr}], lr=reduced_lr, weight_decay=args.wd, momentum=0.9)
+        
+        logger.info(f"{args.optimizer} Optimizer LR = {args.lr} for Base Model ({args.model}) Parameters and LR = {reduced_lr} for UNet Decoder Parameters with WD = {args.wd}")
+
+    if args.lr_steps > 0:
+        step_size = int(args.epochs // (args.lr_steps + 1))
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=args.step_gamma) # Step the Learning Rate by the gamma factor during training
+        logger.info(f"StepLR initialized with step size = {step_size} and gamma = 0.1")
+    else:
+        raise ValueError("args.lr_steps must be > 0")
+    
+    logger.info(f"dice loss factor: {args.dice_loss_factor}")
 
     if use_gpu:
-        model.cuda()
         criterion.cuda()
 
     # Initialize an evaluation Object
@@ -205,51 +284,59 @@ def main():
     total_recall = []
     total_f1 = []
 
-    #iou_classwise = []
-    #precision_classwise = []
-    #recall_classwise = []
-    #f1_classwise = []
-
     logger.info(f"Training Starting")
+    best_f1 = 0
+    best_epoch = 0
+
     for epoch in range(args.epochs):
-        train_loss = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger)
+        train_loss = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
 
-        val_loss = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger)
+        val_loss = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
 
-        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Val Loss={val_loss}")
+        scheduler.step()
+
+        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Val Loss={val_loss}, LR={optimizer.param_groups[0]['lr']}")
 
         # Calculate the metrics
         print(f'\n>>>>>>>>>>>>>>>>>> Evaluation Metrics {epoch+1}/{args.epochs} <<<<<<<<<<<<<<<<<', flush=True)
         IoU = evaluator.getIoU()
 
         print(f"Mean IoU = {torch.mean(IoU)}", flush=True)
-        #print(f"Class-Wise IoU = {IoU}", flush=True)
+        print(f"Class-Wise IoU = {IoU}", flush=True)
         total_iou.append(torch.mean(IoU))
-        #iou_classwise.append(IoU.cpu().detach().numpy())
 
         PRF1 = evaluator.getPRF1()
         precision, recall, F1 = PRF1[0], PRF1[1], PRF1[2]
 
         print(f"Mean Precision = {torch.mean(precision)}", flush=True)
-        #print(f"Class-Wise Precision = {precision}", flush=True)
+       #print(f"Class-Wise Precision = {precision}", flush=True)
         total_precision.append(torch.mean(precision))
-        #precision_classwise.append(precision.cpu().detach().numpy())
 
         print(f"Mean Recall = {torch.mean(recall)}", flush=True)
         #print(f"Class-Wise Recall = {recall}", flush=True)
         total_recall.append(torch.mean(recall))
-        #recall_classwise.append(recall.cpu().detach().numpy())
 
         print(f"Mean F1 = {torch.mean(F1)}", flush=True)
-        #print(f"Class-Wise F1 = {F1}", flush=True)
+        print(f"Class-Wise F1 = {F1}", flush=True)
         total_f1.append(torch.mean(F1))
-        #f1_classwise.append(F1.cpu().detach().numpy())
 
-        logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)}")
+        if torch.mean(F1) > best_f1:
+            best_f1 = torch.mean(F1)
+            best_epoch = epoch + 1
+
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                }, filename=os.path.join(args.save_dir, f"{args.model}_{args.dataset}_bs{args.trainBatchSize}lr{args.lr}e{args.epochs}_checkpoint"))
+            
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)} (Best) (Saved)")
+        else:
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)}")
 
         evaluator.reset()
 
-    logger.info("Training Complete")
+    logger.info(f"(Training Complete): Best Mean F1={best_f1}, Best Epoch={best_epoch}")
 
     # loss curves
     plt.plot(range(1, args.epochs+1), train_losses, color='blue')
@@ -257,8 +344,8 @@ def main():
     plt.legend(["Train Loss", "Val Loss"])
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
-    plt.title(f"Loss Curves for {args.model} on {args.dataset} (bs{args.batchSize}/lr{args.lr}/e{args.epochs}")
-    figure_name = f"loss_{args.model}_{args.dataset}_bs{args.batchSize}lr{args.lr}e{args.epochs}"
+    plt.title(f"Loss Curves for {args.model} on {args.dataset} (bs{args.trainBatchSize}/lr{args.lr}/e{args.epochs})")
+    figure_name = f"loss_{args.model}_{args.dataset}_bs{args.trainBatchSize}lr{args.lr}e{args.epochs}.png"
     plt.savefig(f"{args.save_dir}/{figure_name}")
 
     logger.info(f"Loss Curve saved to {args.save_dir}/{figure_name}")
@@ -272,56 +359,14 @@ def main():
     plt.legend(["Mean IoU", "Mean Precision", "Mean Recall", "Mean F1"])
     plt.xlabel("Epochs")
     plt.ylabel("Accuracy")
-    plt.title(f"Accuracy Curves for {args.model} on {args.dataset} (bs{args.batchSize}/lr{args.lr}/e{args.epochs}")
-    figure_name = f"acc_{args.model}_{args.dataset}_bs{args.batchSize}lr{args.lr}e{args.epochs}"
+    plt.title(f"Accuracy Curves for {args.model} on {args.dataset} (bs{args.trainBatchSize}/lr{args.lr}/e{args.epochs})")
+    figure_name = f"acc_{args.model}_{args.dataset}_bs{args.trainBatchSize}lr{args.lr}e{args.epochs}.png"
     plt.savefig(f"{args.save_dir}/{figure_name}")
 
     logger.info(f"Accuracy Curve saved to {args.save_dir}/{figure_name}")
 
 
-    # classwise accuracy curves
-    '''
-    iou_classwise = np.array(iou_classwise)
-    precision_classwise = np.array(precision_classwise)
-    recall_classwise = np.array(recall_classwise)
-    f1_classwise = np.array(f1_classwise)
-
-    iou_classwise = np.dstack(iou_classwise)
-    precision_classwise = np.dstack(precision_classwise)
-    recall_classwise = np.dstack(recall_classwise)
-    f1_classwise = np.dstack(f1_classwise)
-    
-    iou_fig = plt.figure()
-    iou_axes = plt.axes()
-    # generate classwise plots
-    for c in iou_classwise[0]:
-        iou_axes.plot(range(1,6), c)
-    
-    plt.title("Classwise IoU")
-    plt.xlabel("Epochs")
-    plt.ylabel("Accuracy")
-    plt.legend(range(1,14))
-    
-    #mplcursors.cursor(hover=True)
-    #mplcursors.cursor().connect(
-    #"add", lambda sel: sel.annotation.set_text(sel.artist.get_label()))
-    class_labels = range(1,14)
-    interactive_legend = plugins.InteractiveLegendPlugin(iou_axes, class_labels)
-    plugins.connect(iou_fig, interactive_legend)
-
-    mpld3.display()
-    #plt.show()
-    mpld3.save_html(iou_fig, "iou.html", template_type='simple', no_extras=True)
-    '''
-    
-    save_checkpoint({
-        'epoch': epoch + 1,
-        'state_dict': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-    }, filename=os.path.join(args.save_dir, f"{args.model}_{args.dataset}_bs{args.batchSize}lr{args.lr}e{args.epochs}_checkpoint"))
-
-
-def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, losses, img_mean, img_std, logger):
+def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, losses, img_mean, img_std, logger, args):
     '''
     Run one training epoch
     '''
@@ -333,19 +378,19 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
 
     total_train_loss = 0
 
-    for i, (img, gt) in train_loop:
+    for i, (img, gt, label) in train_loop:
 
         # For TenCrop Data Augmentation
-        img = img.view(-1, 3, args.resizedHeight, args.resizedWidth)
-        img = utils.normalize(img, torch.Tensor(img_mean), torch.Tensor(img_std)) # Synapse
-        gt = gt.view(-1, 3, args.resizedHeight, args.resizedWidth)
+        if args.cropSize != -1:
+            img = img.view(-1, 3, args.cropSize, args.cropSize)
+            gt = gt.view(-1, 3, args.cropSize, args.cropSize)
+        else:
+            img = img.view(-1, 3, args.resizedHeight, args.resizedWidth)
+            gt = gt.view(-1, 3, args.resizedHeight, args.resizedWidth)
+        
+        img = utils.normalize(img, torch.Tensor(img_mean), torch.Tensor(img_std))
 
         # Process the network inputs and outputs
-        gt_temp = gt * 255
-        label = utils.generateLabel4CE(gt_temp, key)
-        oneHotGT = utils.generateOneHot(gt_temp, key)
-
-        img, label = Variable(img), Variable(label)
 
         if use_gpu:
             img = img.cuda()
@@ -353,26 +398,35 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
 
         # Compute output
         seg = model(img)
-        
-        
-        loss = model.dice_loss(seg, label)
+
+        if args.dataset == "synapse":
+            loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+        else:
+            loss = (0.5 * dice_loss(seg, label)) +  (0.5 * criterion(seg, label))
         total_train_loss += loss.mean().item()
 
-        optimizer.zero_grad()
+        # PyTorch recommended over optimizer.zero_grad()
+        # https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#use-parameter-grad-none-instead-of-model-zero-grad-or-optimizer-zero-grad
+        for param in model.parameters():
+            param.grad = None
+
         loss.backward()
         optimizer.step()
 
-        scheduler.step(loss.mean().detach())
         train_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
         train_loop.set_postfix(avg_loss = total_train_loss / (i + 1))
+
+        seg = torch.argmax(seg, dim=1)
         
-        utils.displaySamples(img, seg, gt, use_gpu, key, False, epoch, i, args.save_dir)
+        if args.display_samples == "True":
+            utils.displaySamples(img, seg, gt, use_gpu, key, False, epoch, i)
         
     losses.append(total_train_loss / len(train_loop))
+
     return total_train_loss/len(train_loop)
 
-
-def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_mean, img_std, logger):
+@torch.no_grad() # disables gradient calculations
+def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_mean, img_std, logger, args):
     '''
     Run evaluation
     '''
@@ -384,33 +438,41 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
 
     val_loop = tqdm(enumerate(val_loader), total=len(val_loader))
 
-    for i, (img, gt) in val_loop:
-
+    for i, (img, gt, label) in val_loop:
         # Process the network inputs and outputs
         img = utils.normalize(img, torch.Tensor(img_mean), torch.Tensor(img_std))
-        gt_temp = gt * 255
-        label = utils.generateLabel4CE(gt_temp, key)
-        oneHotGT = utils.generateOneHot(gt_temp, key)
-
-        img, label = Variable(img), Variable(label)
+        oneHotGT = one_hot(label, len(key)).permute(0, 3, 1, 2)
 
         if use_gpu:
             img = img.cuda()
             label = label.cuda()
+            oneHotGT = oneHotGT.cuda()
 
         # Compute output
         seg = model(img)
-        loss = model.dice_loss(seg, label)
+
+        if args.dataset == "synapse":
+            loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+        else:
+            loss = (0.5 * dice_loss(seg, label)) +  (0.5 * criterion(seg, label))
 
         total_val_loss += loss.mean().item()
 
         val_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
         val_loop.set_postfix(avg_loss = total_val_loss / (i + 1))
 
-        utils.displaySamples(img, seg, gt, use_gpu, key, args.saveTest, epoch, i, args.save_dir)
-        evaluator.addBatch(seg, oneHotGT)
+        evaluator.addBatch(seg, oneHotGT, args)
+
+        seg = torch.argmax(seg, dim=1)
+
+        if args.display_samples == "True":
+            utils.displaySamples(img, seg, gt, use_gpu, key, saveSegs=args.saveSegs, epoch=epoch, imageNum=i, save_dir=args.seg_save_dir, total_epochs=args.epochs)
+        elif args.display_samples == "False" and args.save_samples == "True" and (epoch+1) == args.epochs:
+            utils.displaySamples(img, seg, gt, use_gpu, key, saveSegs=args.saveSegs, epoch=epoch, imageNum=i, save_dir=args.seg_save_dir, total_epochs=args.epochs)
+
         
     losses.append(total_val_loss / len(val_loop))
+
     return total_val_loss/len(val_loop)
 
 

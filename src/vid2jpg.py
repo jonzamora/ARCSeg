@@ -7,7 +7,9 @@ Note: Configured for 25 FPS Videos
 
 import cv2
 
-vidcap = cv2.VideoCapture('test_dataset/tool_video_15.mp4')
+video_path = 'test_dataset/tool_video_15.mp4'
+
+vidcap = cv2.VideoCapture(video_path)
 
 def getFrame(sec):
     vidcap.set(cv2.CAP_PROP_POS_MSEC,sec*1000)
