@@ -1,6 +1,6 @@
 '''
 DataLoader for Semantic Segmentation on Surgical Datasets
-NOTE: This dataloader Loads all data into RAM. If your computer doesn't have enough RAM, use V1 dataloader.
+NOTE: Loads all data into RAM. If your computer doesn't have enough RAM, use V1 dataloader.
 '''
 
 import torch
