@@ -390,6 +390,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
     total_haus_dist = 0
     avg_dice_coeff = 0
     avg_haus_dist = 0
+    total_samples = args.trainBatchSize
 
     for i, (img, gt, label) in train_loop:
 
@@ -436,8 +437,10 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
             total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
             total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
         
-        avg_dice_coeff = total_dice_coeff / args.trainBatchSize
-        avg_haus_dist = total_haus_dist / args.trainBatchSize
+        avg_dice_coeff = total_dice_coeff / total_samples
+        avg_haus_dist = total_haus_dist / total_samples
+
+        total_samples += args.trainBatchSize
         
         
         train_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
@@ -464,6 +467,7 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
     total_haus_dist = 0
     avg_dice_coeff = 0
     avg_haus_dist = 0
+    total_samples = args.valBatchSize
 
     val_loop = tqdm(enumerate(val_loader), total=len(val_loader))
 
@@ -498,8 +502,10 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
             total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
             total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
         
-        avg_dice_coeff = total_dice_coeff / args.valBatchSize
-        avg_haus_dist = total_haus_dist / args.valBatchSize
+        avg_dice_coeff = total_dice_coeff / total_samples
+        avg_haus_dist = total_haus_dist / total_samples
+
+        total_samples += args.valBatchSize
         
         val_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
         val_loop.set_postfix(avg_loss = total_val_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
