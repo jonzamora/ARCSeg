@@ -197,6 +197,7 @@ class SegNetDataset(Dataset):
                 cont_factor = random.uniform(0.9, 1.1)
                 image = TF.adjust_contrast(image, cont_factor)
             
+            # Random Crop
             image, gt, label = self.random_crop(image, gt, label, self.resizedWidth, self.resizedHeight)
 
         
