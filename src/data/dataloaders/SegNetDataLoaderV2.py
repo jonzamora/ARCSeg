@@ -137,8 +137,10 @@ class SegNetDataset(Dataset):
                     self.images.append(image)
                     self.gt_images.append(gt)
             elif self.sample == 'test':
-                image = TF.resize(image, [1080, 1920], interpolation=Image.BILINEAR)
-                gt = TF.resize(gt_image, [1080, 1920], interpolation=Image.NEAREST)
+                #image = TF.resize(image, [1080, 1920], interpolation=Image.BILINEAR)
+                #gt = TF.resize(gt_image, [1080, 1920], interpolation=Image.NEAREST)
+                image = TF.resize(image, [self.resizedHeight, self.resizedWidth], interpolation=Image.BILINEAR)
+                gt = TF.resize(gt_image, [self.resizedHeight, self.resizedWidth], interpolation=Image.NEAREST)
 
                 gt_label = gt.permute(1, 2, 0)
                 gt_label = (gt_label * 255).long()

@@ -268,7 +268,12 @@ def main():
     else:
         raise ValueError("args.lr_steps must be > 0")
     
-    logger.info(f"dice loss factor: {args.dice_loss_factor}")
+    if args.dice_loss_factor == -1:
+        logger.info("Training with CE Loss Only")
+    elif args.dice_loss_factor >= 0.0 and args.dice_loss_factor <= 1.0:
+        logger.info(f"dice loss factor: {args.dice_loss_factor}")
+    else:
+        raise ValueError("args.dice_loss_factor must be a float value from 0.0 to 1.0")
 
     if use_gpu:
         criterion.cuda()
@@ -400,7 +405,10 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
         seg = model(img)
 
         if args.dataset == "synapse":
-            loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            if args.dice_loss_factor != -1:
+                loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            else:
+                loss = criterion(seg, label)
         else:
             loss = (0.5 * dice_loss(seg, label)) +  (0.5 * criterion(seg, label))
         total_train_loss += loss.mean().item()
@@ -452,7 +460,10 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
         seg = model(img)
 
         if args.dataset == "synapse":
-            loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            if args.dice_loss_factor != -1:
+                loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            else:
+                loss = criterion(seg, label)
         else:
             loss = (0.5 * dice_loss(seg, label)) +  (0.5 * criterion(seg, label))
 
