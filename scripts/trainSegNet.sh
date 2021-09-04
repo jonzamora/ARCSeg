@@ -12,7 +12,7 @@ full_res_validation="False"
 lr=1e-3
 optimizer="Adam"
 wd=0.00001
-lr_steps=7
+lr_steps=4
 step_gamma=0.1
 dice_loss_factor=-1
 

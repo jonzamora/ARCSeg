@@ -22,7 +22,8 @@ from torch.nn.functional import one_hot
 from tqdm import tqdm
 import random
 import utils
-from utils import dice_loss
+from utils import dice_loss, dice
+from scipy.spatial.distance import directed_hausdorff
 
 # model imports
 from model.unet import UNet
@@ -294,20 +295,22 @@ def main():
     best_epoch = 0
 
     for epoch in range(args.epochs):
-        train_loss = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
+        train_loss, train_dice_coeff, train_haus_dist = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
 
-        val_loss = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
+        val_loss, val_dice_coeff, val_haus_dist = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
 
         scheduler.step()
 
-        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Val Loss={val_loss}, LR={optimizer.param_groups[0]['lr']}")
+        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Avg. Train DC={train_dice_coeff}, Avg. Train HD={train_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
+        logger.info(f"Epoch {epoch+1}/{args.epochs}: Val Loss={val_loss}, Avg. Val DC={val_dice_coeff}, Avg. Val HD={val_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
 
         # Calculate the metrics
         print(f'\n>>>>>>>>>>>>>>>>>> Evaluation Metrics {epoch+1}/{args.epochs} <<<<<<<<<<<<<<<<<', flush=True)
         IoU = evaluator.getIoU()
 
         print(f"Mean IoU = {torch.mean(IoU)}", flush=True)
-        print(f"Class-Wise IoU = {IoU}", flush=True)
+        if (epoch + 1) % args.epochs / 50 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
+            print(f"Class-Wise IoU = {IoU}", flush=True)
         total_iou.append(torch.mean(IoU))
 
         PRF1 = evaluator.getPRF1()
@@ -322,7 +325,8 @@ def main():
         total_recall.append(torch.mean(recall))
 
         print(f"Mean F1 = {torch.mean(F1)}", flush=True)
-        print(f"Class-Wise F1 = {F1}", flush=True)
+        if (epoch + 1) % args.epochs / 50 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
+            print(f"Class-Wise F1 = {F1}", flush=True)
         total_f1.append(torch.mean(F1))
 
         if torch.mean(F1) > best_f1:
@@ -335,9 +339,9 @@ def main():
                 'optimizer': optimizer.state_dict(),
                 }, filename=os.path.join(args.save_dir, f"{args.model}_{args.dataset}_bs{args.trainBatchSize}lr{args.lr}e{args.epochs}_checkpoint"))
             
-            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)} (Best) (Saved)")
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)} (Best) (Saved)\n")
         else:
-            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)}")
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Mean IoU={torch.mean(IoU)}, Mean Precision={torch.mean(precision)}, Mean Recall={torch.mean(recall)}, Mean F1={torch.mean(F1)}\n")
 
         evaluator.reset()
 
@@ -382,6 +386,10 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
     train_loop = tqdm(enumerate(train_loader), total=len(train_loader))
 
     total_train_loss = 0
+    total_dice_coeff = 0
+    total_haus_dist = 0
+    avg_dice_coeff = 0
+    avg_haus_dist = 0
 
     for i, (img, gt, label) in train_loop:
 
@@ -411,6 +419,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
                 loss = criterion(seg, label)
         else:
             loss = (0.5 * dice_loss(seg, label)) +  (0.5 * criterion(seg, label))
+
         total_train_loss += loss.mean().item()
 
         # PyTorch recommended over optimizer.zero_grad()
@@ -421,17 +430,25 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
         loss.backward()
         optimizer.step()
 
-        train_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
-        train_loop.set_postfix(avg_loss = total_train_loss / (i + 1))
-
         seg = torch.argmax(seg, dim=1)
+
+        for seg_im, label_im in zip(seg, label):
+            total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
+            total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
+        
+        avg_dice_coeff = total_dice_coeff / args.trainBatchSize
+        avg_haus_dist = total_haus_dist / args.trainBatchSize
+        
+        
+        train_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
+        train_loop.set_postfix(avg_loss = total_train_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
         
         if args.display_samples == "True":
             utils.displaySamples(img, seg, gt, use_gpu, key, False, epoch, i)
         
     losses.append(total_train_loss / len(train_loop))
 
-    return total_train_loss/len(train_loop)
+    return total_train_loss/len(train_loop), avg_dice_coeff, avg_haus_dist
 
 @torch.no_grad() # disables gradient calculations
 def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_mean, img_std, logger, args):
@@ -443,6 +460,10 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
     model.eval()
 
     total_val_loss = 0
+    total_dice_coeff = 0
+    total_haus_dist = 0
+    avg_dice_coeff = 0
+    avg_haus_dist = 0
 
     val_loop = tqdm(enumerate(val_loader), total=len(val_loader))
 
@@ -469,12 +490,19 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
 
         total_val_loss += loss.mean().item()
 
-        val_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
-        val_loop.set_postfix(avg_loss = total_val_loss / (i + 1))
-
         evaluator.addBatch(seg, oneHotGT, args)
 
         seg = torch.argmax(seg, dim=1)
+
+        for seg_im, label_im in zip(seg, label):
+            total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
+            total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
+        
+        avg_dice_coeff = total_dice_coeff / args.valBatchSize
+        avg_haus_dist = total_haus_dist / args.valBatchSize
+        
+        val_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
+        val_loop.set_postfix(avg_loss = total_val_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
 
         if args.display_samples == "True":
             utils.displaySamples(img, seg, gt, use_gpu, key, saveSegs=args.saveSegs, epoch=epoch, imageNum=i, save_dir=args.seg_save_dir, total_epochs=args.epochs)
@@ -482,9 +510,9 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
             utils.displaySamples(img, seg, gt, use_gpu, key, saveSegs=args.saveSegs, epoch=epoch, imageNum=i, save_dir=args.seg_save_dir, total_epochs=args.epochs)
 
         
-    losses.append(total_val_loss / len(val_loop))
+    losses.append(total_val_loss / len(val_loop)), avg_dice_coeff, avg_haus_dist
 
-    return total_val_loss/len(val_loop)
+    return total_val_loss/len(val_loop), avg_dice_coeff, avg_haus_dist
 
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
