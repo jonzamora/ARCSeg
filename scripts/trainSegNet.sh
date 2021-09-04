@@ -7,6 +7,7 @@ workers=1
 
 train_batch_size=37
 val_batch_size=29
+full_res_validation="False"
 
 lr=1e-3
 optimizer="Adam"
@@ -37,6 +38,7 @@ python ../src/trainSegNet.py \
     --workers $workers \
     --trainBatchSize $train_batch_size \
     --valBatchSize $val_batch_size \
+    --full_res_validation $full_res_validation \
     --resizedHeight $resized_height \
     --resizedWidth $resized_width \
     --cropSize $cropSize \

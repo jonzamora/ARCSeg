@@ -23,7 +23,7 @@ class SegNetDataset(Dataset):
 
     def __init__(self, root_dir, crop_size=-1, json_path=None, sample=None, 
                  dataset=None, image_size=[256, 256], horizontal_flip=True, brightness=True, contrast=True,
-                 rotate=True, vertical_flip=True):
+                 rotate=True, vertical_flip=True, full_res_validation="False"):
         '''
         args:
 
@@ -46,6 +46,7 @@ class SegNetDataset(Dataset):
         self.crop_size = crop_size
         self.sample = sample
         self.dataset = dataset
+        self.full_res_validation = full_res_validation
 
         # Data Augmentation Parameters
         self.resizedHeight = image_size[0]
@@ -94,10 +95,11 @@ class SegNetDataset(Dataset):
             image, gt_image = to_tensor(image), to_tensor(gt_image)
 
             if self.sample == 'train':
+                # Resize to Half-HD Resolution to do half-crop or five-crop
                 image = TF.resize(image, [540, 960], interpolation=Image.BILINEAR)
                 gt = TF.resize(gt_image, [540, 960], interpolation=Image.NEAREST)
 
-                if self.crop_size != -1:
+                if self.crop_size != -1: # When not -1, you will get 5 Crops for a given [image, gt, label] with the size [self.crop_size, self.crop_size]
                     image_crops = TF.five_crop(img=image, size=self.crop_size)
                     gt_crops = TF.five_crop(img=gt_image, size=self.crop_size)
 
@@ -137,10 +139,13 @@ class SegNetDataset(Dataset):
                     self.images.append(image)
                     self.gt_images.append(gt)
             elif self.sample == 'test':
-                #image = TF.resize(image, [1080, 1920], interpolation=Image.BILINEAR)
-                #gt = TF.resize(gt_image, [1080, 1920], interpolation=Image.NEAREST)
-                image = TF.resize(image, [self.resizedHeight, self.resizedWidth], interpolation=Image.BILINEAR)
-                gt = TF.resize(gt_image, [self.resizedHeight, self.resizedWidth], interpolation=Image.NEAREST)
+                # NOTE: Typically set to "False" unless you want to validate your network on Full-Resolution Images
+                if self.full_res_validation == "True": # when set to "True", you will validate on HD Full-Resolution Images (be aware of decreasing Batch Size to 3 or 1 so it can fit in RAM)
+                    image = TF.resize(image, [1080, 1920], interpolation=Image.BILINEAR)
+                    gt = TF.resize(gt_image, [1080, 1920], interpolation=Image.NEAREST)
+                else:
+                    image = TF.resize(image, [self.resizedHeight, self.resizedWidth], interpolation=Image.BILINEAR)
+                    gt = TF.resize(gt_image, [self.resizedHeight, self.resizedWidth], interpolation=Image.NEAREST)
 
                 gt_label = gt.permute(1, 2, 0)
                 gt_label = (gt_label * 255).long()

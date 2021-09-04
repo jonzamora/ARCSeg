@@ -65,7 +65,7 @@ parser.add_argument('--resizedWidth', default=256, type=int, help='width of the 
 parser.add_argument('--cropSize', default=256, type=int, help='height/width of the resized crop to the network')
 parser.add_argument('--display_samples', default="False", type=str, help='Display samples during training / validation')
 parser.add_argument('--save_samples', default="True", type=str, help='Save samples during final validation epoch')
-
+parser.add_argument('--full_res_validation', default="False", type=str, help='Whether to validate your network on HD (1080x1920) Full-Resolution Images')
 
 # EVALUATION PARAMETERS
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
@@ -113,7 +113,7 @@ def main():
     logger.info(f"Data Augmentations: rotate={rotate}, horizontal_flip={horizontal_flip}, vertical_flip={vertical_flip}")
 
     image_datasets = {x: SegNetDataset(os.path.join(args.data_dir, x), args.cropSize, args.json_path, x, args.dataset, 
-                      image_size, rotate=rotate, horizontal_flip=horizontal_flip, vertical_flip=vertical_flip) for x in ['train', 'test']}
+                      image_size, rotate=rotate, horizontal_flip=horizontal_flip, vertical_flip=vertical_flip, full_res_validation=args.full_res_validation) for x in ['train', 'test']}
 
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x],
                                                   batch_size=args.trainBatchSize if x == 'train' else args.valBatchSize,
