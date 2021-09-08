@@ -22,8 +22,9 @@ from torch.nn.functional import one_hot
 from tqdm import tqdm
 import random
 import utils
-from utils import dice_loss, dice
-from scipy.spatial.distance import directed_hausdorff
+from utils import dice
+from dice_loss import DiceLoss
+from skimage.metrics import hausdorff_distance
 
 # model imports
 from model.unet import UNet
@@ -235,6 +236,18 @@ def main():
     #for n, p in model.named_parameters():
     #    if n.split(".")[0] != "base_model":
     #        p.requires_grad = False
+
+    if args.dice_loss_factor == -1:
+        logger.info("Training with CE Loss Only")
+        dice_loss = None
+    elif args.dice_loss_factor >= 0.0 and args.dice_loss_factor <= 1.0 and args.dataset == "synapse":
+        logger.info(f"dice loss factor: {args.dice_loss_factor}")
+        dice_loss = DiceLoss(ignore_index=21)
+    elif args.dice_loss_factor >= 0.0 and args.dice_loss_factor <= 1.0 and args.dataset != "synapse":
+        logger.info(f"dice loss factor: {args.dice_loss_factor}")
+        dice_loss = DiceLoss() # assumes that, if not training with 'synapse' dataset, all classes will be factored into the dice loss computation
+    else:
+        raise ValueError("args.dice_loss_factor must be a float value from 0.0 to 1.0")
     
     # Optimization Setup
     if args.dataset == "synapse":
@@ -268,13 +281,6 @@ def main():
         logger.info(f"StepLR initialized with step size = {step_size} and gamma = 0.1")
     else:
         raise ValueError("args.lr_steps must be > 0")
-    
-    if args.dice_loss_factor == -1:
-        logger.info("Training with CE Loss Only")
-    elif args.dice_loss_factor >= 0.0 and args.dice_loss_factor <= 1.0:
-        logger.info(f"dice loss factor: {args.dice_loss_factor}")
-    else:
-        raise ValueError("args.dice_loss_factor must be a float value from 0.0 to 1.0")
 
     if use_gpu:
         criterion.cuda()
@@ -295,21 +301,28 @@ def main():
     best_epoch = 0
 
     for epoch in range(args.epochs):
-        train_loss, train_dice_coeff, train_haus_dist = train(dataloaders['train'], model, criterion, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
 
-        val_loss, val_dice_coeff, val_haus_dist = validate(dataloaders['test'], model, criterion, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
+        if (epoch+1) == 1 or (epoch+1) % 25 == 0: # dice coefficient and hausdorff distance every 25 epochs
+            train_loss, train_dice_coeff, train_haus_dist = train(dataloaders['train'], model, criterion, dice_loss, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Avg. Train DC={train_dice_coeff}, Avg. Train HD={train_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
+
+            val_loss, val_dice_coeff, val_haus_dist = validate(dataloaders['test'], model, criterion, dice_loss, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Val Loss={val_loss}, Avg. Val DC={val_dice_coeff}, Avg. Val HD={val_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
+        else:
+            train_loss = train(dataloaders['train'], model, criterion, dice_loss, optimizer, scheduler, epoch, key, train_losses, image_mean, image_std, logger, args)
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, LR={optimizer.param_groups[0]['lr']}")
+
+            val_loss = validate(dataloaders['test'], model, criterion, dice_loss, epoch, key, evaluator, val_losses, image_mean, image_std, logger, args)
+            logger.info(f"Epoch {epoch+1}/{args.epochs}: Val Loss={val_loss}, LR={optimizer.param_groups[0]['lr']}")
 
         scheduler.step()
-
-        logger.info(f"Epoch {epoch+1}/{args.epochs}: Train Loss={train_loss}, Avg. Train DC={train_dice_coeff}, Avg. Train HD={train_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
-        logger.info(f"Epoch {epoch+1}/{args.epochs}: Val Loss={val_loss}, Avg. Val DC={val_dice_coeff}, Avg. Val HD={val_haus_dist}, LR={optimizer.param_groups[0]['lr']}")
-
+        
         # Calculate the metrics
         print(f'\n>>>>>>>>>>>>>>>>>> Evaluation Metrics {epoch+1}/{args.epochs} <<<<<<<<<<<<<<<<<', flush=True)
         IoU = evaluator.getIoU()
 
         print(f"Mean IoU = {torch.mean(IoU)}", flush=True)
-        if (epoch + 1) % args.epochs / 50 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
+        if (epoch + 1) % 25 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
             print(f"Class-Wise IoU = {IoU}", flush=True)
         total_iou.append(torch.mean(IoU))
 
@@ -317,7 +330,7 @@ def main():
         precision, recall, F1 = PRF1[0], PRF1[1], PRF1[2]
 
         print(f"Mean Precision = {torch.mean(precision)}", flush=True)
-       #print(f"Class-Wise Precision = {precision}", flush=True)
+        #print(f"Class-Wise Precision = {precision}", flush=True)
         total_precision.append(torch.mean(precision))
 
         print(f"Mean Recall = {torch.mean(recall)}", flush=True)
@@ -325,7 +338,7 @@ def main():
         total_recall.append(torch.mean(recall))
 
         print(f"Mean F1 = {torch.mean(F1)}", flush=True)
-        if (epoch + 1) % args.epochs / 50 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
+        if (epoch + 1) % 25 == 0: # print every 50 epochs (assuming epochs >= 50 and divisible by 50)
             print(f"Class-Wise F1 = {F1}", flush=True)
         total_f1.append(torch.mean(F1))
 
@@ -375,7 +388,7 @@ def main():
     logger.info(f"Accuracy Curve saved to {args.save_dir}/{figure_name}")
 
 
-def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, losses, img_mean, img_std, logger, args):
+def train(train_loader, model, criterion, dice_loss, optimizer, scheduler, epoch, key, losses, img_mean, img_std, logger, args):
     '''
     Run one training epoch
     '''
@@ -414,8 +427,8 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
         seg = model(img)
 
         if args.dataset == "synapse":
-            if args.dice_loss_factor != -1:
-                loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            if args.dice_loss_factor != -1 and dice_loss != None:
+                loss = (args.dice_loss_factor * dice_loss(seg, label)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
             else:
                 loss = criterion(seg, label)
         else:
@@ -433,28 +446,44 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, key, loss
 
         seg = torch.argmax(seg, dim=1)
 
-        for seg_im, label_im in zip(seg, label):
-            total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
-            total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
-        
-        avg_dice_coeff = total_dice_coeff / total_samples
-        avg_haus_dist = total_haus_dist / total_samples
+        # Dice Coefficient and Hausdorff Distance Metrics every 10 epochs
+        if (epoch+1) == 1 or (epoch+1) % 25 == 0:
+            for seg_im, label_im in zip(seg, label): # iterate over each image in the batch
+                seg_im, label_im = one_hot(seg_im, len(key)), one_hot(label_im, len(key))
+                seg_im, label_im = seg_im.cpu(), label_im.cpu()
+                seg_im, label_im = seg_im.permute(2, 0, 1), label_im.permute(2, 0, 1)
+                total_dice_coeff += dice(seg_im.data, label_im.data)
 
-        total_samples += args.trainBatchSize
-        
-        
+                if args.dataset == "synapse":
+                    seg_im, label_im = seg_im[:21], label_im[:21]
+
+                for seg_slice, label_slice in zip(seg_im, label_im): # iterate over each image slice
+                    seg_slice, label_slice = seg_slice.numpy(), label_slice.numpy()
+                    total_haus_dist += 1000 if hausdorff_distance(seg_slice, label_slice) == np.inf else hausdorff_distance(seg_slice, label_slice)
+            
+            avg_dice_coeff = total_dice_coeff / total_samples
+            avg_haus_dist = total_haus_dist / total_samples
+
+            total_samples += args.trainBatchSize
+
+            train_loop.set_postfix(avg_loss = total_train_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
+        else:
+            train_loop.set_postfix(avg_loss = total_train_loss / (i + 1))
+
         train_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
-        train_loop.set_postfix(avg_loss = total_train_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
         
         if args.display_samples == "True":
             utils.displaySamples(img, seg, gt, use_gpu, key, False, epoch, i)
         
     losses.append(total_train_loss / len(train_loop))
 
-    return total_train_loss/len(train_loop), avg_dice_coeff, avg_haus_dist
+    if (epoch+1) == 1 or (epoch+1) % 25 == 0:
+        return total_train_loss/len(train_loop), avg_dice_coeff, avg_haus_dist
+    else:
+        return total_train_loss/len(train_loop)
 
 @torch.no_grad() # disables gradient calculations
-def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_mean, img_std, logger, args):
+def validate(val_loader, model, criterion, dice_loss, epoch, key, evaluator, losses, img_mean, img_std, logger, args):
     '''
     Run evaluation
     '''
@@ -485,8 +514,8 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
         seg = model(img)
 
         if args.dataset == "synapse":
-            if args.dice_loss_factor != -1:
-                loss = (args.dice_loss_factor * dice_loss(seg, label, ignore_index=21)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
+            if args.dice_loss_factor != -1 and dice_loss != None:
+                loss = (args.dice_loss_factor * dice_loss(seg, label)) +  ((1 - args.dice_loss_factor) * criterion(seg, label))
             else:
                 loss = criterion(seg, label)
         else:
@@ -498,17 +527,31 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
 
         seg = torch.argmax(seg, dim=1)
 
-        for seg_im, label_im in zip(seg, label):
-            total_dice_coeff += dice(seg_im.cpu().data, label_im.cpu().data)
-            total_haus_dist += directed_hausdorff(seg_im.cpu().data, label_im.cpu().data)[0]
-        
-        avg_dice_coeff = total_dice_coeff / total_samples
-        avg_haus_dist = total_haus_dist / total_samples
+        # Dice Coefficient and Hausdorff Distance Metrics every 10 epochs
+        if (epoch+1) == 1 or (epoch+1) % 25 == 0:
+            for seg_im, label_im in zip(seg, label): # iterate over each image in the batch
+                seg_im, label_im = one_hot(seg_im, len(key)), one_hot(label_im, len(key))
+                seg_im, label_im = seg_im.cpu(), label_im.cpu()
+                seg_im, label_im = seg_im.permute(2, 0, 1), label_im.permute(2, 0, 1)
+                total_dice_coeff += dice(seg_im.data, label_im.data)
 
-        total_samples += args.valBatchSize
+                if args.dataset == "synapse":
+                    seg_im, label_im = seg_im[:21], label_im[:21]
+
+                for seg_slice, label_slice in zip(seg_im, label_im): # iterate over each image slice
+                    seg_slice, label_slice = seg_slice.numpy(), label_slice.numpy()
+                    total_haus_dist += 1000 if hausdorff_distance(seg_slice, label_slice) == np.inf else hausdorff_distance(seg_slice, label_slice)
+            
+            avg_dice_coeff = total_dice_coeff / total_samples
+            avg_haus_dist = total_haus_dist / total_samples
+
+            total_samples += args.trainBatchSize
+
+            val_loop.set_postfix(avg_loss = total_val_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
+        else:
+            val_loop.set_postfix(avg_loss = total_val_loss / (i + 1))
         
         val_loop.set_description(f"Epoch [{epoch + 1}/{args.epochs}]")
-        val_loop.set_postfix(avg_loss = total_val_loss / (i + 1), avg_dice = avg_dice_coeff, avg_haus_dist = avg_haus_dist) # avg dice coefficient and avg hausdorff distance per image
 
         if args.display_samples == "True":
             utils.displaySamples(img, seg, gt, use_gpu, key, saveSegs=args.saveSegs, epoch=epoch, imageNum=i, save_dir=args.seg_save_dir, total_epochs=args.epochs)
@@ -518,7 +561,10 @@ def validate(val_loader, model, criterion, epoch, key, evaluator, losses, img_me
         
     losses.append(total_val_loss / len(val_loop)), avg_dice_coeff, avg_haus_dist
 
-    return total_val_loss/len(val_loop), avg_dice_coeff, avg_haus_dist
+    if (epoch+1) == 1 or (epoch+1) % 25 == 0:
+        return total_val_loss/len(val_loop), avg_dice_coeff, avg_haus_dist
+    else:
+        return total_val_loss/len(val_loop)
 
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):

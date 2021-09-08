@@ -28,7 +28,7 @@ json_path="/home/jonzamora/Desktop/arclab/ARCSeg/src/data/classes/${dataset}SegC
 display_samples="False"
 save_samples="True"
 
-save_dir="../results/${model}/${dataset}/crop_ablation/${dice_loss_factor}/bs_train${train_batch_size}_val${val_batch_size}/imsize_${resized_height}x${resized_width}_wd_${wd}_optim_${optimizer}_lr${lr}_steps_${lr_steps}_gamma_${step_gamma}/e${epochs}_seed6210"
+save_dir="../results/${model}/${dataset}/half_resolution_random_crop/dice_factor_${dice_loss_factor}/bs_train${train_batch_size}_val${val_batch_size}/imsize_${resized_height}x${resized_width}_wd_${wd}_optim_${optimizer}_lr${lr}_steps_${lr_steps}_gamma_${step_gamma}/e${epochs}_seed6210"
 seg_save_dir="${save_dir}/seg_results"
 
 mkdir -p $save_dir

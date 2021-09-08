@@ -51,7 +51,6 @@ class Evaluate():
         seg = torch.argmax(seg, dim=1)
         seg = one_hot(seg, self.num_classes - 1).permute(0, 3, 1, 2)
         
-        #seg = convertToOneHot(seg, self.use_gpu).byte()
         seg = seg.float()
         gt = gt.float()
 
@@ -82,38 +81,6 @@ class Evaluate():
         f1 = (2 * precision * recall) / (precision + recall + 1e-15)
 
         return precision, recall, f1
-
-def convertToOneHot(batch, use_gpu):
-    '''
-        Converts the network output from softmax to one-hot encoding.
-    '''
-
-    if use_gpu:
-        batch = batch.cpu()
-
-    batch = batch.data.numpy()
-
-    oneHot = []
-
-    # Iterate over all images in a batch
-    for i in range(len(batch)):
-        vec = batch[i]
-        idxs = vec
-
-        single = np.zeros([1, batch.shape[1], batch.shape[2]])
-        # Iterate over all the key-value pairs in the class Key dict
-        for k in range(batch.shape[1]):
-            mask = idxs == k
-            mask = np.expand_dims(mask, axis=0)
-            single = np.concatenate((single, mask), axis=0)
-
-        single = np.expand_dims(single[1:,:,:], axis=0)
-        
-        oneHot.append(single)
-
-    oneHot = np.concatenate(oneHot)
-    oneHot = torch.from_numpy(oneHot.astype(np.uint8))
-    return oneHot
 
 ############################# Regular Utilities ###############################
 def get_logger(name, log_path=None):
@@ -148,7 +115,6 @@ def displaySamples(img, generated, gt, use_gpu, key, saveSegs, epoch, imageNum, 
     gt = gt.numpy()
     gt = np.transpose(np.squeeze(gt[0,:,:,:]), (1,2,0)) # [256, 256, 3]
     gt = gt.astype(np.uint8)
-    #print(f"gt shape: {gt.shape}, gt dtype: {gt.dtype}")
     gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB) / 255
 
     generated = generated.data.numpy()
@@ -309,44 +275,6 @@ def normalize(batch, mean, std):
     return concat
 
 '''
-Loss Functions
-'''
-
-def dice_loss(output, target, weights=None, ignore_index=None):
-        '''
-            output : NxCxHxW Variable
-            target :  NxHxW LongTensor
-            weights : C FloatTensor
-            ignore_index : int index to ignore from loss
-        '''
-        eps = 0.0001
-
-        encoded_target = output.detach() * 0
-        if ignore_index is not None:
-            mask = target == ignore_index
-            target = target.clone()
-            target[mask] = 0
-            encoded_target.scatter_(1, target.unsqueeze(1), 1)
-            mask = mask.unsqueeze(1).expand_as(encoded_target)
-            encoded_target[mask] = 0
-        else:
-            encoded_target.scatter_(1, target.unsqueeze(1), 1)
-
-        if weights is None:
-            weights = 1
-
-        intersection = output * encoded_target
-        numerator = 2 * intersection.sum(0).sum(1).sum(1)
-        denominator = output + encoded_target
-
-        if ignore_index is not None:
-            denominator[mask] = 0
-        denominator = denominator.sum(0).sum(1).sum(1) + eps
-        loss_per_channel = weights * (1 - (numerator / denominator))
-
-        return loss_per_channel.sum() / output.size(1)
-
-'''
 Metrics
 '''
 
@@ -373,8 +301,8 @@ def dice(im1, im2, empty_score=1.0):
     The order of inputs for `dice` is irrelevant. The result will be
     identical if `im1` and `im2` are switched.
     """
-    im1 = np.asarray(im1).astype(np.bool)
-    im2 = np.asarray(im2).astype(np.bool)
+    im1 = np.asarray(im1).astype(bool)
+    im2 = np.asarray(im2).astype(bool)
 
     if im1.shape != im2.shape:
         raise ValueError("Shape mismatch: im1 and im2 must have the same shape.")
