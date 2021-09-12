@@ -28,4 +28,6 @@ WORKDIR /workspace
 COPY environment.yml  .
 RUN conda env create -f environment.yml 
 
+RUN apt-get install -y libgl1-mesa-glx
+
 CMD [ "bash" ]
