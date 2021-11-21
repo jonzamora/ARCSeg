@@ -19,8 +19,9 @@ When initializing the networks, we have found success in using the following enc
 - `ResNet18`
 - `ResNet34`
 - `ResNet50`
+- `EfficientNet-B4`
 
-The above ResNets are all trained on ImageNet, and they serve as strong encoder backbones for our segmentation networks
+The above ResNets and EfficientNet-B4 are all trained on ImageNet, and they serve as strong encoder backbones for our segmentation networks
 
 ## Training a Semantic Segmentation Network
 
