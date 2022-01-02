@@ -1,4 +1,4 @@
-# ARCSeg - Supervised Semantic Segmentation for HeiChole 2021 Full Scene Segmentation Competition 🤖
+# ARCSeg - Supervised Semantic Segmentation Benchmarking Framework for Surgical Robotics 📹 🤖 🪡
 
 ---
 
